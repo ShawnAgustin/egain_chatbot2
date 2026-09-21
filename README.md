@@ -188,8 +188,9 @@ The dashed line is the `agent` escape hatch, available at every step.
 something reasonable, so the bot suggests why it might not match rather than implying they
 got it wrong.
 
-**3 · Two misses in a row, at any step.** The bot still explains what went wrong, then stops
-re-asking and offers a person. Choosing "keep going" returns to the same step.
+**3 · Three misses in a row, at any step.** The bot still explains what went wrong each time,
+then stops re-asking and offers a person. Choosing "keep going" returns to the same step.
+Being annoyed alone doesn't trigger a handoff; the customer has to ask for a person.
 
 **4 · The agent itself fails.** Timeouts, API errors, or an illegal move from the model
 all fall back to keyword matching or a re-prompt. The customer never sees a crash.

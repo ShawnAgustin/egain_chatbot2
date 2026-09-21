@@ -54,17 +54,28 @@ function talk(...inputs) {
   await check("error 2: valid shape, no record", () => {
     assert.match(talk("EG-99999").said, /can't find a package under EG-99999/);
   });
-  await check("error 3: two misses → still explains, then offers a person", () => {
-    const { s, r } = talk("what", "EG-99999");
+  await check("error 3: three misses → still explains, then offers a person", () => {
+    const { s, r } = talk("what", "huh", "EG-99999");
     assert.match(r.messages[0].text, /can't find/);          // specific error not swallowed
     assert.equal(s.state, "confirm_escalation");
   });
   await check("keep going after escalation offer resumes the same step", () => {
-    const { s } = talk("what", "huh", "No, let's keep going");
+    const { s } = talk("what", "huh", "hmm", "No, let's keep going");
     assert.equal(s.state, "ask_order"); assert.equal(s.misses, 0);
   });
   await check("'agent' escapes from mid-flow", () => {
     assert.match(talk("EG-10293", "can I talk to a human").said, /support specialist/);
+  });
+  await check("two misses in a row do not offer a person yet", () => {
+    const { s } = talk("what", "huh");
+    assert.equal(s.state, "ask_order");
+  });
+  await check("'someone next door' is not a request for an agent", () => {
+    const { s } = talk("EG-58120", "I asked someone next door");
+    assert.notEqual(s.state, "ended");
+  });
+  await check("'speak to someone' still is", () => {
+    assert.equal(talk("EG-58120", "can I speak to someone please").s.state, "ended");
   });
   await check("engine refuses an illegal move even if asked directly", () => {
     const s = engine.createSession();

@@ -42,7 +42,7 @@
     send_replacement:  { description: "The customer wants a replacement shipped." },
     issue_refund:      { description: "The customer wants a refund." },
     keep_going:        { description: "The customer wants to keep going with the assistant rather than talk to a person." },
-    escalate_to_agent: { description: "The customer asks for a human, is clearly frustrated, or wants something none of the other actions cover." },
+    escalate_to_agent: { description: "The customer explicitly asks for a human, agent or person, or says they want to stop using the assistant. Frustration alone does not count." },
     unclear:           { description: "The customer's message does not clearly match any other action. Use this instead of guessing." }
   };
 
@@ -127,15 +127,16 @@
   }
 
   /* ---------- Error handling ----------
-     Always say what went wrong first. On a second miss in a row,
-     stop asking the same question and offer a person instead.    */
+     Always say what went wrong first. After MISS_LIMIT misses in a
+     row, stop asking the same question and offer a person instead. */
+  const MISS_LIMIT = 3;
   function miss(s, specific) {
     s.misses += 1;
     const messages = [err(specific || STATES[s.state].reprompt(s))];
-    if (s.misses >= 2 && s.state !== "confirm_escalation") {
+    if (s.misses >= MISS_LIMIT && s.state !== "confirm_escalation") {
       s.resumeState = s.state;
       s.state = "confirm_escalation";
-      messages.push(bot("We seem to be going in circles here. Want me to hand this to a person?"));
+      messages.push(bot("I'm sorry, I'm having trouble getting this right. Would you like me to connect you with a person, or keep trying here?"));
     }
     return reply(messages, STATES[s.state].chips(s));
   }
@@ -149,7 +150,7 @@
 
     switch (action) {
       case "escalate_to_agent":
-        return go(s, "ended", "Connecting you to a support specialist. I'm passing along what we have so far" +
+        return go(s, "ended", "Of course. I'll connect you with a support specialist and pass along what we have so far" +
           (s.order ? `: order ${s.order}, reported missing.` : "."));
 
       case "unclear":
@@ -218,7 +219,7 @@
   /* ---------- Rule-based decision maker ----------
      Used in the browser, when no API key is set, and as the
      fallback when a Gemini call fails. Returns null if unsure.   */
-  const AGENT_WORDS = /\b(agent|human|person|representative|rep|someone)\b/i;
+  const AGENT_WORDS = /\b(agent|human|representative|(?:a|real) person|(?:talk|speak) to (?:someone|somebody))\b/i;
 
   function ruleIntent(s, text) {
     const t = text.trim();
