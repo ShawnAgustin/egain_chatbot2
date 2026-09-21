@@ -111,6 +111,73 @@ function talk(...inputs) {
     assert.equal(r.messages[0].kind, "err"); assert.equal(s.state, "ask_order");
   });
 
+  /* ---------------- The order data (public/orders.json) ---------------- */
+  console.log("\nOrders — every case in orders.json");
+
+  const orders = require("./public/orders.json");
+  const nextStep = { delivered: "looked_around", in_transit: "in_transit", out_for_delivery: "in_transit",
+    attempted: "in_transit", not_shipped: "in_transit", held: "in_transit", stalled: "stalled",
+    returned: "claim_type", damaged: "claim_type", misdelivered: "claim_type", cancelled: "ended" };
+
+  await check("orders.json has at least 20 cases, each with a use case and a known status", () => {
+    const ids = Object.keys(orders);
+    assert.ok(ids.length >= 20, `only ${ids.length} orders`);
+    for (const id of ids) {
+      assert.equal(engine.normalizeOrderId(id), id, `${id} is not a valid order number`);
+      assert.ok(orders[id].useCase, `${id} has no useCase`);
+      assert.ok(nextStep[orders[id].status], `${id} has unknown status ${orders[id].status}`);
+    }
+  });
+
+  await check("the engine is using orders.json", () => {
+    assert.deepEqual(Object.keys(engine.ORDERS), Object.keys(orders));
+  });
+
+  for (const [id, rec] of Object.entries(orders)) {
+    await check(`${id} · ${rec.useCase}`, () => {
+      const s = engine.createSession();
+      const r = engine.apply(s, "lookup_order", { order_id: id });
+      assert.equal(r.messages.length, 1);
+      assert.equal(r.messages[0].kind, "bot", r.messages[0].text);
+      assert.equal(s.state, nextStep[rec.status]);
+      assert.ok(r.messages[0].text.includes(id), "reply never names the order");
+      assert.ok(!/undefined|null|\[object/.test(r.messages[0].text), "reply has a missing field: " + r.messages[0].text);
+      assert.equal(s.order, id);
+    });
+  }
+
+  await check("returned and damaged orders can finish as a replacement or a refund", () => {
+    for (const [id, want] of [["EG-11004", /replacement is on the way/], ["EG-11120", /refund will post/]]) {
+      const s = engine.createSession();
+      engine.apply(s, "lookup_order", { order_id: id });
+      const r = engine.apply(s, want.source.includes("replacement") ? "send_replacement" : "issue_refund");
+      assert.match(r.messages[0].text, want); assert.equal(s.state, "ended");
+    }
+  });
+
+  await check("quick replies offer a few featured orders, not all of them", () => {
+    const chips = engine.greeting().chips;
+    assert.ok(chips.length <= 4, chips.join(", "));
+    assert.ok(chips.every(c => orders[c]?.featured));
+  });
+
+  await check("an order with a status the engine can't read gets an error, not a crash", () => {
+    engine.ORDERS["EG-99001"] = { status: "teleported" };
+    const s = engine.createSession();
+    const r = engine.apply(s, "lookup_order", { order_id: "EG-99001" });
+    delete engine.ORDERS["EG-99001"];
+    assert.equal(r.messages[0].kind, "err"); assert.match(r.messages[0].text, /can't read its tracking status/);
+  });
+
+  await check("setOrders swaps the data the engine uses (how the browser loads the file)", () => {
+    const backup = { ...engine.ORDERS };
+    engine.setOrders({ "EG-12345": { status: "cancelled", on: "Sept 1", where: "test", useCase: "x" } });
+    const s = engine.createSession();
+    assert.equal(engine.apply(s, "lookup_order", { order_id: "EG-12345" }).messages[0].kind, "bot");
+    assert.equal(engine.apply(engine.createSession(), "lookup_order", { order_id: "EG-58120" }).messages[0].kind, "err");
+    engine.setOrders(backup);
+  });
+
   /* ---------------- Server + fake Gemini ---------------- */
   console.log("\nServer — agent mode against a fake Gemini (no network)");
 

@@ -12,15 +12,79 @@
    the flowchart. It can't promise a refund that doesn't exist.
    ============================================================ */
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory();
-  else root.TrackBotEngine = factory();
-})(typeof self !== "undefined" ? self : this, function () {
+  if (typeof module === "object" && module.exports) module.exports = factory(require("./orders.json"));
+  else root.TrackBotEngine = factory(null);
+})(typeof self !== "undefined" ? self : this, function (loadedOrders) {
 
-  /* ---------- Mock data (stands in for a carrier tracking API) ---------- */
-  const ORDERS = {
-    "EG-58120": { status: "delivered",  on: "Sept 12", where: "left at front door, photo on file" },
-    "EG-77441": { status: "in_transit", eta: "Sept 19", where: "regional hub, Reno NV" },
-    "EG-10293": { status: "stalled",    due: "Sept 14", where: "last scanned Sept 13 in Memphis TN" }
+  /* ---------- Mock data (stands in for a carrier tracking API) ----------
+     The full set lives in orders.json. Node loads it directly; the browser
+     loads it with setOrders(). If a page opened straight from disk can't
+     fetch it, these three keep the offline demo working.                  */
+  const ORDERS = loadedOrders || {
+    "EG-58120": { status: "delivered",  on: "Sept 12", where: "left at front door, photo on file", featured: true },
+    "EG-77441": { status: "in_transit", eta: "Sept 19", where: "regional hub, Reno NV", featured: true },
+    "EG-10293": { status: "stalled",    due: "Sept 14", where: "last scanned Sept 13 in Memphis TN", featured: true }
+  };
+
+  function setOrders(next) {
+    for (const k of Object.keys(ORDERS)) delete ORDERS[k];
+    Object.assign(ORDERS, next);
+  }
+
+  // The order numbers offered as quick replies. Only a few, not all of them.
+  const featuredOrders = () => {
+    const ids = Object.keys(ORDERS), pick = ids.filter(id => ORDERS[id].featured);
+    return pick.length ? pick : ids.slice(0, 3);
+  };
+
+  /* ---------- What each tracking status means for the conversation ----------
+     Each route returns the step to move to and the draft wording. Delivered
+     orders get ruled out first, in-window orders get reassurance, and orders
+     that will never arrive go straight to a claim.                          */
+  const ROUTES = {
+    delivered: (id, r) => ["looked_around",
+      `Tracking shows ${id} was delivered on ${r.on} — ${r.where}. Since it's not where ` +
+      `you expect it, have you been able to check around the door, with neighbors, or with ` +
+      `anyone else at the address?`],
+
+    in_transit: (id, r) => ["in_transit",
+      `Good news: ${id} isn't lost, it's still moving. Last scan was ${r.where}, with ` +
+      `delivery expected ${r.eta}. I'd give it until then before we call it missing.`],
+
+    out_for_delivery: (id, r) => ["in_transit",
+      `${id} is out for delivery — ${r.where}. It should reach you ${r.eta}, so I'd give ` +
+      `it until then before we call it missing.`],
+
+    attempted: (id, r) => ["in_transit",
+      `The carrier tried to deliver ${id} on ${r.on}, but ${r.where}. They'll try again ` +
+      `${r.retry}, so it isn't lost.`],
+
+    not_shipped: (id, r) => ["in_transit",
+      `${id} hasn't actually shipped yet — ${r.where}. It's due to ship by ${r.shipBy}, so ` +
+      `it isn't lost, it just hasn't left the warehouse.`],
+
+    held: (id, r) => ["in_transit",
+      `${id} is being held: ${r.where}. Once that clears it should start moving again, with ` +
+      `delivery expected ${r.eta}. It isn't lost.`],
+
+    stalled: (id, r) => ["stalled",
+      `${id} was due ${r.due}, and ${r.where} — nothing since. That's past the point ` +
+      `where it should have moved, so I'd treat this one as lost. Sorry about that.`],
+
+    returned: (id, r) => ["claim_type",
+      `${id} was returned to the sender on ${r.on} — ${r.where}. It isn't coming back to ` +
+      `you, so the fix is a replacement or a refund. Which would you like?`],
+
+    misdelivered: (id, r) => ["claim_type",
+      `Tracking shows ${id} was delivered on ${r.on}, but to the wrong address: ${r.where}. ` +
+      `I'm sorry about that. Would you like a replacement or a refund?`],
+
+    damaged: (id, r) => ["claim_type",
+      `Tracking shows ${id} was delivered on ${r.on}, but ${r.where}. I'm sorry about that. ` +
+      `Would you like a replacement or a refund?`],
+
+    cancelled: (id, r) => ["ended",
+      `${id} was cancelled on ${r.on} — ${r.where}, so nothing is on its way to you.`]
   };
 
   /* ---------- Every move the conversation can make ----------
@@ -56,7 +120,7 @@
       ask: () => "What's the order number?",
       reprompt: () => "That doesn't look like an order number. They're two letters, a dash, then " +
                       "4–6 digits — like EG-58120. Mind checking your confirmation email?",
-      chips: () => [...Object.keys(ORDERS), "agent"]
+      chips: () => [...featuredOrders(), "agent"]
     },
     looked_around: {
       actions: ["already_checked", "will_look"],
@@ -102,7 +166,7 @@
 
   function greeting() {
     return reply([bot("Hi, I'm TrackBot. Sorry your package hasn't shown up — let's find it. " +
-                      "What's the order number?")], Object.keys(ORDERS));
+                      "What's the order number?")], featuredOrders());
   }
 
   function allowedActions(s) {
@@ -191,23 +255,11 @@
         if (!rec) return miss(s,                                    // error case 2: valid shape, no record
           `I can't find a package under ${id}. It may be mistyped, or placed under a ` +
           `different account or email. Want to try another number?`);
+        const route = ROUTES[rec.status];
+        if (!route) return miss(s,                                  // error case 3: record we can't interpret
+          `I found ${id}, but I can't read its tracking status right now. Want to try another number?`);
         s.order = id;
-
-        // Tracking says delivered — rule out the ordinary explanations first.
-        if (rec.status === "delivered") return go(s, "looked_around",
-          `Tracking shows ${id} was delivered on ${rec.on} — ${rec.where}. Since it's not where ` +
-          `you expect it, have you been able to check around the door, with neighbors, or with ` +
-          `anyone else at the address?`);
-
-        // Still inside the delivery window — reassure, don't open a claim.
-        if (rec.status === "in_transit") return go(s, "in_transit",
-          `Good news: ${id} isn't lost, it's still moving. Last scan was ${rec.where}, with ` +
-          `delivery expected ${rec.eta}. I'd give it until then before we call it missing.`);
-
-        // Past its window with no movement — genuinely lost.
-        return go(s, "stalled",
-          `${id} was due ${rec.due}, and ${rec.where} — nothing since. That's past the point ` +
-          `where it should have moved, so I'd treat this one as lost. Sorry about that.`);
+        return go(s, ...route(id, rec));
       }
 
       case "already_checked":
@@ -283,5 +335,5 @@
     return null;
   }
 
-  return { ORDERS, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, ruleIntent, normalizeOrderId };
+  return { ORDERS, setOrders, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, ruleIntent, normalizeOrderId };
 });

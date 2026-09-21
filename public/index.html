@@ -193,8 +193,10 @@ async function serverBackend() {
   };
 }
 
-function localBackend() {
+async function localBackend() {
   const E = window.TrackBotEngine;
+  // Opened straight from disk, browsers block this fetch; the engine's built-in sample orders cover that.
+  try { const r = await fetch("orders.json"); if (r.ok) E.setOrders(await r.json()); } catch {}
   const s = E.createSession();
   return {
     label: "local · rule-based",
@@ -211,9 +213,9 @@ function localBackend() {
 (async function start() {
   try {
     const tryServer = API || location.protocol.startsWith("http");
-    backend = tryServer ? await serverBackend() : localBackend();
+    backend = tryServer ? await serverBackend() : await localBackend();
   } catch {
-    backend = localBackend();   // page served without our API — still works
+    backend = await localBackend();   // page served without our API — still works
   }
   modeTag.textContent = backend.label;
   modeTag.classList.toggle("agent", backend.agent);

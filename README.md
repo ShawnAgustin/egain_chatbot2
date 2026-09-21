@@ -30,7 +30,7 @@ in the chat header shows which mode you're in. With no key, the server still run
 rule-based mode.
 
 ```bash
-npm test                    # 39 tests; no key or network needed
+npm test                    # 65 tests; no key or network needed
 ```
 
 ---
@@ -215,10 +215,11 @@ all fall back to keyword matching or a re-prompt. The customer never sees a cras
 public/
   index.html     chat interface; talks to the server, or runs the engine locally
   engine.js      the conversation flow — shared by browser and server
+  orders.json    20 mock orders, one per situation the bot handles
   config.js      where the agent server lives, if it's hosted separately
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          39 tests: every path, every error, every guardrail
+test.js          65 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design
@@ -272,6 +273,42 @@ every reply after it is worded by Gemini from the app's facts.
 | `my order is eg 58120` | Agent mode pulls the number out of a sentence |
 | `nah not out there, asked next door` | Agent mode understands; keyword mode doesn't |
 | `EG-10293`, then `this is so annoying`, then `SERIOUSLY?? this is ridiculous` | Two upset messages in a row → offers a person |
+
+---
+
+## Test orders
+
+`public/orders.json` holds 20 mock orders, one per situation, standing in for a carrier
+tracking API. Type any of these order numbers into the chat. Only three (`EG-58120`,
+`EG-77441`, `EG-10293`) are offered as quick replies, so the chips stay short.
+
+| Order | Situation | What the bot does |
+|---|---|---|
+| `EG-58120` | Delivered, left at the front door with a photo | Rules out the ordinary explanations first: asks them to check around the door and with neighbors |
+| `EG-58207` | Delivered, signed for by someone else at the address | Rules out the ordinary explanations first: asks them to check around the door and with neighbors |
+| `EG-58333` | Delivered to a neighbor | Rules out the ordinary explanations first: asks them to check around the door and with neighbors |
+| `EG-58419` | Delivered to a parcel locker or mailroom | Rules out the ordinary explanations first: asks them to check around the door and with neighbors |
+| `EG-58502` | Delivered to the wrong address | Says it went to the wrong address; goes straight to replacement or refund |
+| `EG-77441` | In transit, on schedule | Reassures with the last scan and ETA; offers an arrival alert |
+| `EG-77502` | In transit, a few days from arriving | Reassures with the last scan and ETA; offers an arrival alert |
+| `EG-77618` | In transit, due tomorrow | Reassures with the last scan and ETA; offers an arrival alert |
+| `EG-77730` | In transit, weather delay but still inside the window | Reassures with the last scan and ETA; offers an arrival alert |
+| `EG-77845` | Out for delivery today | Says it's on the truck and when to expect it; offers an arrival alert |
+| `EG-77951` | Delivery attempted, nobody available | Explains the missed delivery and when the carrier will retry |
+| `EG-78060` | Label created but not shipped yet | Explains it hasn't left the warehouse and when it should ship |
+| `EG-78174` | Held at customs | Explains the hold and the new ETA; not lost |
+| `EG-10293` | Stalled, past due with no movement | Treats it as lost; offers a claim or a few more days |
+| `EG-10388` | Stalled at a sort facility, a few days overdue | Treats it as lost; offers a claim or a few more days |
+| `EG-10412` | Stalled for weeks, long overdue | Treats it as lost; offers a claim or a few more days |
+| `EG-10527` | Stalled, label unreadable at sorting | Treats it as lost; offers a claim or a few more days |
+| `EG-11004` | Returned to sender | Explains it went back to the sender; goes straight to replacement or refund |
+| `EG-11120` | Delivered but damaged | Apologizes; goes straight to replacement or refund |
+| `EG-11236` | Cancelled and refunded | Says nothing is on its way and when the refund went out |
+
+To add a case, add an entry to the file. The `status` picks which conversation route it
+follows (the routes live in `engine.js`); `featured: true` makes it a quick-reply chip.
+When the page is opened straight from disk the browser can't read this file, so it falls back
+to three built-in sample orders.
 
 ---
 
