@@ -30,7 +30,7 @@ in the chat header shows which mode you're in. With no key, the server still run
 rule-based mode.
 
 ```bash
-npm test                    # 65 tests; no key or network needed
+npm test                    # 70 tests; no key or network needed
 ```
 
 ---
@@ -67,6 +67,11 @@ a script. If the rewrite adds or drops a number, date, or order id, changes the 
 messages, or the call fails, the plain draft is sent instead. Gemini can change how something
 is said, never what is promised.
 
+**Always proactive.** Every reply ends by asking what the customer wants to do next and naming
+the options (for example, "file a claim now, or keep watching it for a few more days?"), or,
+once a chat is wrapped up, by saying how to start another lookup. Gemini's rewrite is thrown
+away if it turns that question into a bare statement.
+
 **Noticing when a customer is upset.** Along with the move, Gemini also flags whether the
 newest message sounds angry or exasperated. One upset message doesn't hand the customer off:
 the reply acknowledges how they feel and keeps helping. Two in a row means the flow isn't
@@ -87,7 +92,7 @@ matcher misses.
 | Gemini is only offered the current step's moves | Skipping ahead, e.g. straight to a refund |
 | The server re-checks the chosen move anyway | A model that ignores its instructions |
 | Order numbers from the model are validated and looked up | Hallucinated order numbers |
-| Facts in every reply come from the app; Gemini's rewrite is thrown away if it changes a number, date or order id | Invented promises or policy |
+| Facts in every reply come from the app; Gemini's rewrite is thrown away if it changes a number, date or order id, or drops the follow-up question | Invented promises, or a reply that leaves the customer hanging |
 | Customer text is fenced off as data in the prompt | "Ignore your rules and…" |
 | The upset flag only decides whether to *offer* a person, never which move runs | Anger being used to skip steps |
 | Gemini error or timeout (8s) → keyword matching takes over | A dead chat during an outage |
@@ -219,7 +224,7 @@ public/
   config.js      where the agent server lives, if it's hosted separately
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          65 tests: every path, every error, every guardrail
+test.js          70 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design
@@ -304,6 +309,12 @@ tracking API. Type any of these order numbers into the chat. Only three (`EG-581
 | `EG-11004` | Returned to sender | Explains it went back to the sender; goes straight to replacement or refund |
 | `EG-11120` | Delivered but damaged | Apologizes; goes straight to replacement or refund |
 | `EG-11236` | Cancelled and refunded | Says nothing is on its way and when the refund went out |
+
+The **view all orders** link under the chat opens a panel listing every order with its status
+and raw fields. Click a row to look it up. It reads `GET /api/orders`, so it works when the
+page is hosted apart from the server.
+
+![View all orders](screenshots/05-view-all-orders.png)
 
 To add a case, add an entry to the file. The `status` picks which conversation route it
 follows (the routes live in `engine.js`); `featured: true` makes it a quick-reply chip.

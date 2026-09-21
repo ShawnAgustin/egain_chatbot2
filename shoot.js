@@ -12,6 +12,11 @@ const shots = [
   { name: "02-error-handling",        steps: ["where is my stuff", "EG-99999"] },
   { name: "03-in-transit-not-lost",   steps: ["EG-77441", "yes please let me know when it gets here"] },
   { name: "04-upset-handoff",         steps: ["EG-10293", "this is so annoying, it's been weeks", "SERIOUSLY?? this is ridiculous"] },
+  { name: "05-view-all-orders",       steps: [], after: async page => {
+      await page.click("#ordersToggle");
+      await page.waitForSelector(".orow");
+      await page.addStyleTag({ content: "#orderList{max-height:none!important}" });
+  } },
 ];
 
 (async () => {
@@ -28,6 +33,7 @@ const shots = [
       await page.waitForFunction(() => !document.querySelector("#entry").disabled, null, { timeout: 60000 });
       await page.waitForTimeout(100);
     }
+    if (shot.after) await shot.after(page);
     // let the whole transcript show in the capture instead of the scrolled view
     await page.addStyleTag({ content: "#thread{height:auto!important;max-height:none!important}" });
     await page.waitForTimeout(150);

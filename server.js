@@ -83,6 +83,9 @@ app.get("/api/status", (req, res) => {
   res.json({ agent: agentOn() ? "gemini" : "rules", model: agentOn() ? gemini.MODEL : null });
 });
 
+/* ---- Every mock order, for the "view all orders" debug panel ---- */
+app.get("/api/orders", (req, res) => res.json(engine.ORDERS));
+
 /* ---- Start a conversation ---- */
 app.post("/api/session", rateLimit(SESSION_LIMIT), (req, res) => {
   const id = crypto.randomUUID();

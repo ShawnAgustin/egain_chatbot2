@@ -48,6 +48,21 @@
   #thread::-webkit-scrollbar{width:8px}
   #thread::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px}
   body.hide-decisions .decision{display:none}
+  .tools{display:flex; gap:16px; align-items:baseline}
+  .linkbtn{border:0; background:none; padding:0; font:inherit; color:var(--navy); text-decoration:underline; cursor:pointer; white-space:nowrap}
+  .orders{margin-top:12px}
+  .orders-head{padding:10px 14px; background:var(--navy); color:var(--paper); font-size:12.5px}
+  .orders-note{padding:9px 14px; background:var(--err); color:var(--err-ink); font-size:12.5px; border-bottom:1px solid var(--line)}
+  #orderList{max-height:340px; overflow-y:auto}
+  .orow{display:flex; gap:12px; width:100%; text-align:left; padding:9px 14px; border:0; border-bottom:1px solid var(--line);
+        background:none; font:inherit; color:inherit; cursor:pointer}
+  .orow:hover{background:var(--bot)}
+  .oleft{display:flex; flex-direction:column; flex:0 0 112px; font:11.5px "Courier New",monospace}
+  .oid{font-size:12.5px; font-weight:600; color:var(--navy)}
+  .ostatus{color:var(--amber-dk)}
+  .oright{display:flex; flex-direction:column; min-width:0}
+  .ouse{font-size:13.5px}
+  .odet{font:11.5px "Courier New",monospace; color:var(--muted); overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -67,7 +82,16 @@
 
   <div class="foot">
     <span>Try <code>EG-58120</code> · <code>EG-77441</code> · <code>EG-10293</code>, or type <code>agent</code> anytime.</span>
-    <label><input type="checkbox" id="showDecisions" checked> show agent decisions</label>
+    <span class="tools">
+      <button type="button" id="ordersToggle" class="linkbtn" aria-expanded="false" aria-controls="orders">view all orders</button>
+      <label><input type="checkbox" id="showDecisions" checked> show agent decisions</label>
+    </span>
+  </div>
+
+  <div id="orders" class="panel orders" hidden>
+    <div class="orders-head" id="ordersHead">All test orders — click one to look it up in the chat</div>
+    <div class="orders-note" id="ordersNote" hidden></div>
+    <div id="orderList"></div>
   </div>
 </div>
 
@@ -209,6 +233,61 @@ async function localBackend() {
     }
   };
 }
+
+/* ---------- Debug: browse every order ---------- */
+const ordersToggle = document.getElementById("ordersToggle");
+const ordersBox = document.getElementById("orders");
+const orderList = document.getElementById("orderList");
+let ordersShown = false;
+
+// The server's list first, then the file next to this page, then whatever the engine has built in.
+// If it has to fall back, say why, so a short list isn't mistaken for the real one.
+async function fetchOrders() {
+  const failed = [];
+  for (const url of [API + "/api/orders", "orders.json"]) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (r.ok) return { orders: await r.json(), note: "" };
+      failed.push(`${url} → HTTP ${r.status}`);
+    } catch (e) {
+      failed.push(`${url} → ${e.name === "TimeoutError" ? "timed out" : "blocked or unreachable"}`);
+    }
+  }
+  const orders = window.TrackBotEngine.ORDERS;
+  return { orders, note: `Couldn't load the full list (${failed.join("; ")}). Showing ${Object.keys(orders).length} built-in ` +
+    `sample orders instead. Restart or redeploy the server with the latest code to see all of them.` };
+}
+
+function orderRow(id, rec) {
+  const el = (tag, cls, text) => Object.assign(document.createElement(tag), { className: cls, textContent: text });
+  const row = el("button", "orow");
+  row.type = "button";
+  row.title = "Look up " + id;
+  const left = el("span", "oleft");
+  left.append(el("span", "oid", id), el("span", "ostatus", rec.status));
+  const details = Object.entries(rec).filter(([k]) => !["useCase", "status"].includes(k))
+    .map(([k, v]) => k === "featured" ? "quick reply" : `${k}: ${v}`).join(" · ");
+  const right = el("span", "oright");
+  right.append(el("span", "ouse", rec.useCase || "(no description)"), el("span", "odet", details));
+  row.append(left, right);
+  row.onclick = () => { document.getElementById("thread").scrollIntoView({ block: "nearest" }); submit(id); };
+  return row;
+}
+
+ordersToggle.onclick = async () => {
+  ordersBox.hidden = !ordersBox.hidden;
+  ordersToggle.textContent = ordersBox.hidden ? "view all orders" : "hide orders";
+  ordersToggle.setAttribute("aria-expanded", String(!ordersBox.hidden));
+  if (ordersBox.hidden || ordersShown) return;
+  const { orders, note } = await fetchOrders();
+  const noteBox = document.getElementById("ordersNote");
+  noteBox.textContent = note;
+  noteBox.hidden = !note;
+  document.getElementById("ordersHead").textContent =
+    `All test orders (${Object.keys(orders).length}) — click one to look it up in the chat`;
+  orderList.replaceChildren(...Object.entries(orders).map(([id, rec]) => orderRow(id, rec)));
+  ordersShown = true;
+};
 
 (async function start() {
   try {

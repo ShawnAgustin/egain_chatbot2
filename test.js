@@ -146,6 +146,31 @@ function talk(...inputs) {
     });
   }
 
+  await check("every reply ends by asking what to do next, or says how to start again", () => {
+    for (const id of Object.keys(orders)) {
+      const s = engine.createSession();
+      const text = engine.apply(s, "lookup_order", { order_id: id }).messages.at(-1).text;
+      assert.ok(/\?/.test(text) || /Start a new lookup/.test(text), `${id} leaves the customer hanging: ${text}`);
+    }
+  });
+
+  await check("stalled orders name both options: file a claim or keep watching", () => {
+    const text = engine.apply(engine.createSession(), "lookup_order", { order_id: "EG-10293" }).messages[0].text;
+    assert.match(text, /file a claim now, or keep watching it/);
+  });
+
+  await check("wrapped-up replies say how to look up another order", () => {
+    const run = (order, ...moves) => {
+      const s = engine.createSession(); engine.apply(s, "lookup_order", { order_id: order });
+      let r; for (const m of moves) r = engine.apply(s, m); return r.messages.at(-1).text;
+    };
+    for (const text of [
+      run("EG-77441", "notify_on_arrival"), run("EG-10293", "wait_longer"),
+      run("EG-10293", "file_claim", "send_replacement"), run("EG-10293", "file_claim", "issue_refund"),
+      run("EG-58120", "will_look", "found_it")
+    ]) assert.match(text, /Start a new lookup/, text);
+  });
+
   await check("returned and damaged orders can finish as a replacement or a refund", () => {
     for (const [id, want] of [["EG-11004", /replacement is on the way/], ["EG-11120", /refund will post/]]) {
       const s = engine.createSession();
@@ -243,6 +268,14 @@ function talk(...inputs) {
     assert.equal(lastDecisionRequest.body.toolConfig.functionCallingConfig.mode, "ANY");
   });
 
+  await check("GET /api/orders lists every order for the debug panel", async () => {
+    const r = await realFetch(base + "/api/orders", { headers: { Origin: "https://shawn.github.io" } });
+    const data = await r.json();
+    assert.deepEqual(Object.keys(data), Object.keys(orders));
+    assert.equal(data["EG-11004"].status, "returned");
+    assert.equal(r.headers.get("access-control-allow-origin"), "https://shawn.github.io");
+  });
+
   await check("API key travels in a header, never the URL", async () => {
     assert.equal(lastGeminiRequest.headers["x-goog-api-key"], "test-key");
     assert.ok(!lastGeminiRequest.url.includes("test-key"));
@@ -267,7 +300,7 @@ function talk(...inputs) {
     const id = await newChat();
     fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441" } });
     voice = () => ["Good news, EG-77441 is still on the move! It was last scanned at the regional hub, " +
-                   "Reno NV, and should arrive by Sept 19."];
+                   "Reno NV, and should arrive by Sept 19. Want me to ping you when it lands, or check a different order?"];
     const r = await say(id, "ugh where is EG-77441");
     assert.match(r.messages[0].text, /Good news, EG-77441 is still on the move/);
     assert.equal(r.messages[0].kind, "bot");
@@ -296,6 +329,15 @@ function talk(...inputs) {
     const r = await say(id, "EG-77441");
     assert.match(r.messages[0].text, /still moving/);          // plain draft went out instead
     assert.ok(!/credit/.test(r.messages[0].text));
+    voice = () => "HTTP_500";
+  });
+
+  await check("natural wording: a rewrite that drops the follow-up question is discarded", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-10293" } });
+    voice = () => ["EG-10293 was due Sept 14 and last scanned Sept 13 in Memphis TN, so I'd treat it as lost. Sorry about that."];
+    const r = await say(id, "EG-10293");
+    assert.match(r.messages[0].text, /file a claim now, or keep watching it/);   // plain draft, question intact
     voice = () => "HTTP_500";
   });
 

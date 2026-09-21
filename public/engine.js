@@ -21,9 +21,9 @@
      loads it with setOrders(). If a page opened straight from disk can't
      fetch it, these three keep the offline demo working.                  */
   const ORDERS = loadedOrders || {
-    "EG-58120": { status: "delivered",  on: "Sept 12", where: "left at front door, photo on file", featured: true },
-    "EG-77441": { status: "in_transit", eta: "Sept 19", where: "regional hub, Reno NV", featured: true },
-    "EG-10293": { status: "stalled",    due: "Sept 14", where: "last scanned Sept 13 in Memphis TN", featured: true }
+    "EG-58120": { useCase: "Delivered, left at the front door with a photo", status: "delivered",  on: "Sept 12", where: "left at front door, photo on file", featured: true },
+    "EG-77441": { useCase: "In transit, on schedule", status: "in_transit", eta: "Sept 19", where: "regional hub, Reno NV", featured: true },
+    "EG-10293": { useCase: "Stalled, past due with no movement", status: "stalled",    due: "Sept 14", where: "last scanned Sept 13 in Memphis TN", featured: true }
   };
 
   function setOrders(next) {
@@ -37,6 +37,13 @@
     return pick.length ? pick : ids.slice(0, 3);
   };
 
+  /* ---------- Never leave the customer hanging ----------
+     Every reply ends by asking what they want to do next and naming the
+     options, or (once a chat is wrapped up) by saying how to start again. */
+  const ASK_TRANSIT = "Would you like me to alert you when it's delivered, or look up a different order?";
+  const ASK_CLAIM   = "Would you like me to file a claim now, or keep watching it for a few more days?";
+  const MORE_HELP   = 'If there\'s another order you\'d like me to check, just tap "Start a new lookup" or send me the number.';
+
   /* ---------- What each tracking status means for the conversation ----------
      Each route returns the step to move to and the draft wording. Delivered
      orders get ruled out first, in-window orders get reassurance, and orders
@@ -49,27 +56,27 @@
 
     in_transit: (id, r) => ["in_transit",
       `Good news: ${id} isn't lost, it's still moving. Last scan was ${r.where}, with ` +
-      `delivery expected ${r.eta}. I'd give it until then before we call it missing.`],
+      `delivery expected ${r.eta}. I'd give it until then before we call it missing. ${ASK_TRANSIT}`],
 
     out_for_delivery: (id, r) => ["in_transit",
       `${id} is out for delivery — ${r.where}. It should reach you ${r.eta}, so I'd give ` +
-      `it until then before we call it missing.`],
+      `it until then before we call it missing. ${ASK_TRANSIT}`],
 
     attempted: (id, r) => ["in_transit",
       `The carrier tried to deliver ${id} on ${r.on}, but ${r.where}. They'll try again ` +
-      `${r.retry}, so it isn't lost.`],
+      `${r.retry}, so it isn't lost. ${ASK_TRANSIT}`],
 
     not_shipped: (id, r) => ["in_transit",
       `${id} hasn't actually shipped yet — ${r.where}. It's due to ship by ${r.shipBy}, so ` +
-      `it isn't lost, it just hasn't left the warehouse.`],
+      `it isn't lost, it just hasn't left the warehouse. ${ASK_TRANSIT}`],
 
     held: (id, r) => ["in_transit",
       `${id} is being held: ${r.where}. Once that clears it should start moving again, with ` +
-      `delivery expected ${r.eta}. It isn't lost.`],
+      `delivery expected ${r.eta}. It isn't lost. ${ASK_TRANSIT}`],
 
     stalled: (id, r) => ["stalled",
       `${id} was due ${r.due}, and ${r.where} — nothing since. That's past the point ` +
-      `where it should have moved, so I'd treat this one as lost. Sorry about that.`],
+      `where it should have moved, so I'd treat this one as lost. Sorry about that. ${ASK_CLAIM}`],
 
     returned: (id, r) => ["claim_type",
       `${id} was returned to the sender on ${r.on} — ${r.where}. It isn't coming back to ` +
@@ -84,7 +91,7 @@
       `Would you like a replacement or a refund?`],
 
     cancelled: (id, r) => ["ended",
-      `${id} was cancelled on ${r.on} — ${r.where}, so nothing is on its way to you.`]
+      `${id} was cancelled on ${r.on} — ${r.where}, so nothing is on its way to you. ${MORE_HELP}`]
   };
 
   /* ---------- Every move the conversation can make ----------
@@ -268,24 +275,24 @@
       case "will_look":
         return go(s, "recheck", "Go ahead and take a look — I'll be here. Come back and tell me either way.");
       case "found_it":
-        return go(s, "ended", "That's a relief. Glad it turned up.");
+        return go(s, "ended", `That's a relief. Glad it turned up. ${MORE_HELP}`);
       case "still_missing":
         return go(s, "claim_type", "Understood — let's open a claim. What would you like as the outcome?");
       case "notify_on_arrival":
-        return go(s, "ended", `Done — I'll alert you the moment ${s.order} is delivered.`);
+        return go(s, "ended", `Done — I'll alert you the moment ${s.order} is delivered. ${MORE_HELP}`);
       case "new_lookup":
         s.order = null;
         return go(s, "ask_order", "No problem — what's the order number?");
       case "file_claim":
         return go(s, "claim_type", "What would you like as the outcome?");
       case "wait_longer":
-        return go(s, "ended", `Okay — I've flagged ${s.order} as at-risk and I'll keep watching it. Check back anytime.`);
+        return go(s, "ended", `Okay — I've flagged ${s.order} as at-risk and I'll keep watching it. ${MORE_HELP}`);
       case "send_replacement":
         return go(s, "ended", `Claim opened for ${s.order} — a replacement is on the way. ` +
-          `Confirmation and case number are headed to your email.`);
+          `Confirmation and case number are headed to your email. ${MORE_HELP}`);
       case "issue_refund":
         return go(s, "ended", `Claim opened for ${s.order} — the refund will post to your original ` +
-          `payment method in 3–5 business days. Confirmation is headed to your email.`);
+          `payment method in 3–5 business days. Confirmation is headed to your email. ${MORE_HELP}`);
     }
     return miss(s);
   }

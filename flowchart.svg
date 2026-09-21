@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 680 1024" role="img" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 680 1244" role="img" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
 <title>Lost package chatbot conversation flow</title>
-<desc>Decision tree beginning with an order number request, validating format and lookup, triaging tracking status into three branches, and ending in a close-out, a claim, or a human agent handoff. Yes paths exit the bottom-left of each decision diamond; no paths exit the bottom-right.</desc>
+<desc>Decision tree beginning with an order number request, validating format and lookup, triaging tracking status into three branches, and ending in a close-out, a claim, or a human agent handoff. Yes paths exit the bottom-left of each decision diamond; no paths exit the bottom-right. A separate At any step section shows that two upset messages in a row, or three unmatched replies in a row, offer to connect the customer to a person; yes goes to the agent handoff and no resumes the same step.</desc>
 <defs>
 <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
 <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -107,4 +107,28 @@
 
 <path d="M230 42 H8 V982 H454" fill="none" stroke="#73726C" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
 <text x="200" y="970" text-anchor="start" dominant-baseline="central" font-size="12" fill="#5F5E5A">"agent" at any time</text>
+
+<rect x="10" y="1024" width="660" height="208" rx="10" fill="none" stroke="#73726C" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="24" y="1042" text-anchor="start" dominant-baseline="central" font-size="12" fill="#5F5E5A">At any step</text>
+
+<g fill="#FAECE7" stroke="#993C1D" stroke-width="0.5">
+<rect x="240" y="1054" width="220" height="52" rx="8"/>
+</g>
+<text x="350" y="1071" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#4A1B0C">Upset twice in a row</text>
+<text x="350" y="1089" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#993C1D">or 3 misses in a row</text>
+
+<path d="M350 1128 L450 1170 L350 1212 L250 1170 Z" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="350" y="1170" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#26215C">Wants a person?</text>
+
+<rect x="20" y="1144" width="180" height="52" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="110" y="1161" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#2C2C2A">Keep going</text>
+<text x="110" y="1179" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">resume the same step</text>
+
+<path d="M350 1106 V1122" fill="none" stroke="#73726C" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M450 1170 H550 V1012" fill="none" stroke="#639922" stroke-width="2.5" marker-end="url(#arrow)"/>
+<path d="M250 1170 H208" fill="none" stroke="#D85A30" stroke-width="2.5" marker-end="url(#arrow)"/>
+<g font-size="13" font-weight="500" dominant-baseline="central">
+<text x="500" y="1156" text-anchor="middle" fill="#3B6D11">Yes</text>
+<text x="229" y="1156" text-anchor="middle" fill="#993C1D">No</text>
+</g>
 </svg>

@@ -102,7 +102,10 @@ so it sounds natural and human, responding to what the customer just said.
 Rules:
 - The draft is the only source of facts. Keep every order number, date, place, amount and
   timeframe exactly as written. Never add facts, promises, policies, refunds or numbers.
-- Keep whatever question or next step the draft asks the customer for.
+- Keep whatever question or next step the draft asks the customer for, and name the options
+  it offers (for example "file a claim now or keep watching it a few more days?"). Be proactive:
+  never end on a bare statement when the draft asks or offers something, and don't turn a
+  question into a statement.
 - Sound warm and conversational. Vary your wording; don't sound scripted. Keep it short: usually
   one to three sentences, plain text, no lists, no markdown, no emoji.
 - Acknowledge what the customer said when it helps (frustration, relief, a joke) before the facts.
@@ -150,6 +153,8 @@ async function phraseReply({ transcript, text, messages }) {
       throw new Error("Gemini reply had the wrong shape");
 
     const rewritten = messages.map((m, i) => ({ ...m, text: out[i].trim() }));
+    if (/\?/.test(messages.at(-1).text) && !/\?/.test(rewritten.at(-1).text))
+      throw new Error("Gemini dropped the question the draft asks");
     if (numbersIn(rewritten.map(m => m.text).join(" ")) !== numbersIn(messages.map(m => m.text).join(" ")))
       throw new Error("Gemini changed a number, date or order id");
     return rewritten;
