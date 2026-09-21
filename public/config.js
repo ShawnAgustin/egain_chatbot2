@@ -11,4 +11,4 @@
    If the server can't be reached, the page still works in
    rule-based mode, so the demo never breaks.
    ============================================================ */
-window.TRACKBOT_API = "";
+window.TRACKBOT_API = "https://trackbot-3w10.onrender.com";
