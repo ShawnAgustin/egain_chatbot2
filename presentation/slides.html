@@ -58,9 +58,9 @@
   .facts{margin-top:14px; display:grid; gap:9px; font-size:17px; list-style:none}
   .facts li{padding-left:22px; position:relative}
   .facts li::before{content:""; position:absolute; left:2px; top:9px; width:9px; height:9px; border-radius:50%; background:var(--amber)}
-  .crop{position:relative; width:470px; height:476px; overflow:hidden; border-radius:12px; border:1px solid var(--line); background:#fff;
+  .crop{position:relative; width:470px; height:462px; overflow:hidden; border-radius:12px; border:1px solid var(--line); background:#fff;
         box-shadow:0 8px 24px rgba(36,51,80,.14)}
-  .crop img{position:absolute; width:1040px; left:-285px; top:-368px; max-width:none}
+  .crop img{position:absolute; left:0; bottom:0; width:100%; display:block}
   .cap{font-size:13.5px; color:var(--muted); margin-top:7px}
 
   /* ---------- Slide 3 ---------- */
@@ -154,11 +154,11 @@
         <li><strong>Only legal moves are offered</strong> to Gemini each step, and it must call exactly one. Illegal picks are rejected.</li>
         <li><strong>The reword is checked.</strong> If it changes a number, date or order id, or drops the follow-up question, the plain draft is sent.</li>
         <li><strong>Graceful fallbacks.</strong> Gemini down → keyword rules. Server down → the same engine runs in the browser.</li>
-        <li><strong>90 automated tests</strong> cover every order, error path, edge case and guardrail. Deployed free on Render.</li>
+        <li><strong>95 automated tests</strong> cover every order, error path, edge case and guardrail. Deployed free on Render.</li>
       </ul>
     </div>
     <div>
-      <div class="crop"><img src="../screenshots/04-upset-handoff.png" alt="TrackBot conversation with an upset customer"></div>
+      <div class="crop"><img src="panel-upset.png" alt="TrackBot conversation with an upset customer"></div>
       <div class="cap">Agent mode: each customer message shows the move chosen, who chose it, and an upset flag. Two upset in a row offers a person.</div>
     </div>
   </div>

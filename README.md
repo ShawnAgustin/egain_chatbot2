@@ -14,8 +14,10 @@ a minute while the server wakes up.
 
 ## Run it
 
-**Quick look, no setup.** Open `public/index.html` in any browser. The full flow runs
-locally, with simple keyword matching deciding each step.
+**Quick look, no setup.** Open `public/index.html` in any browser. It tries the hosted Gemini
+agent first (see `public/config.js`). If that's asleep or unreachable, it runs the full flow
+locally, with keyword matching deciding each step and all 20 test orders available. Flip the
+**AI** switch in the chat header to force keyword mode.
 
 **With the Gemini agent** (needs Node 18+):
 
@@ -29,8 +31,14 @@ Get a free key at [Google AI Studio](https://aistudio.google.com) → *Get API k
 in the chat header shows which mode you're in. With no key, the server still runs in
 rule-based mode.
 
+The **AI** switch in the chat header flips between the agent and keyword mode (fixed
+replies, no AI). Either way it starts a fresh chat. If the server is asleep (free hosts take up
+to a minute to wake), the page starts in keyword mode with a "waking the server" notice, keeps
+asking, and switches to Gemini when it answers, unless you turned the switch off. The switch is
+disabled when no server is configured.
+
 ```bash
-npm test                    # 90 tests; no key or network needed
+npm test                    # 95 tests; no key or network needed
 ```
 
 ---
@@ -48,6 +56,10 @@ of them is actually a lost package. The bot's first job is working out which:
 
 Every path ends in one of three places: the package is found, a claim is opened, or the
 customer reaches a person. Typing `agent` works from anywhere.
+
+Claims, refunds and arrival alerts are simulated: the bot says what it would do (for example,
+that it will alert the customer using the contact information connected to the order) but
+nothing is actually sent or filed in this demo.
 
 ---
 
@@ -125,8 +137,14 @@ every time you push to GitHub.
 Open it and check the badge says **Gemini agent**. Then put the URL at the top of this README.
 
 **About the free tier:** Render puts free servers to sleep after 15 minutes with no visitors.
-The next visit wakes it, which takes 30–60 seconds. If someone has the chat open when it
-sleeps, their next message quietly starts a fresh conversation instead of showing an error.
+The next visit wakes it, which takes 30–60 seconds. A page hosted elsewhere (or opened from
+disk) starts in keyword mode with a "waking the server" notice and switches to Gemini when the
+server answers. If someone has the chat open when it sleeps, their next message quietly starts a
+fresh conversation instead of showing an error.
+
+To let a page opened straight from disk call the hosted server, add `null` to Render's
+`ALLOWED_ORIGINS`. That is convenient for a demo, but any sandboxed page can send `null`, so
+remove it for anything real (rate limits are what actually protect your key).
 
 ---
 
@@ -137,8 +155,9 @@ You can split this into two pieces:
 - **The chat page** — plain files in `public/`, hosted free on GitHub Pages.
 - **The agent server** — `server.js`, running on your own machine, holding the key.
 
-The page calls the server over the internet. If the server is ever off, the page notices
-within 5 seconds and keeps working in rule-based mode, so a reviewer never sees a broken demo.
+The page calls the server over the internet. If the server is ever off or asleep, the page
+switches to keyword mode after 5 seconds and keeps asking, so a reviewer never sees a broken
+demo, and it upgrades to Gemini by itself once the server answers.
 
 **1 · Put the agent server online (Tailscale Funnel).** On the machine that will run it,
 with Tailscale installed and signed in:
@@ -195,7 +214,10 @@ to rule-based mode.
 
 **Yes paths leave the bottom-left of a decision and go left; no paths leave the
 bottom-right and go right.** The two error boxes on the right loop back to the start.
-The dashed line is the `agent` escape hatch, available at every step.
+The dashed line is the `agent` escape hatch, available at every step. The dashed box at the
+bottom shows the other rules that apply at any step: two upset messages in a row, or three
+unmatched replies, offer a person; a different order number while another is in progress asks
+whether to switch or stay.
 
 ---
 
@@ -241,10 +263,12 @@ public/
   index.html     chat interface; talks to the server, or runs the engine locally
   engine.js      the conversation flow — shared by browser and server
   orders.json    20 mock orders, one per situation the bot handles
+  orders.js      the same orders as a script, so a page opened from disk can use them (generated)
   config.js      where the agent server lives, if it's hosted separately
+build-orders.js  regenerates public/orders.js from orders.json (npm run build:orders)
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          90 tests: every path, every error, every guardrail
+test.js          95 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design
@@ -257,11 +281,13 @@ the same code executes the move.
 
 Each turn on the server:
 1. Browser sends only the customer's text.
-2. Server asks Gemini to pick one of the allowed moves and to flag whether the customer sounds upset.
-3. If Gemini fails, keyword matching picks instead.
-4. Server checks the move is legal from this step.
-5. Engine carries it out and writes a draft reply that holds the facts.
-6. Gemini rewrites the draft in natural words; if that fails or changes a fact, the plain
+2. If the message holds more than one order number, the server asks which to start with and
+   stops there (no Gemini call).
+3. Server asks Gemini to pick one of the allowed moves and to flag whether the customer sounds upset.
+4. If Gemini fails, keyword matching picks instead.
+5. Server checks the move is legal from this step.
+6. Engine carries it out and writes a draft reply that holds the facts.
+7. Gemini rewrites the draft in natural words; if that fails or changes a fact, the plain
    draft is sent instead.
 
 ---
@@ -298,6 +324,9 @@ every reply after it is worded by Gemini from the app's facts.
 | `agent` | Reach a person, from any step |
 | `my order is eg 58120` | Agent mode pulls the number out of a sentence |
 | `nah not out there, asked next door` | Agent mode understands; keyword mode doesn't |
+| `EG-58120 and EG-77441` | Two order numbers → asks which to look at first |
+| `I don't have my order number` | Offers a person right away |
+| `EG-10293`, then `EG-77441` | A different order mid-chat → asks whether to switch or stay |
 | `EG-10293`, then `this is so annoying`, then `SERIOUSLY?? this is ridiculous` | Two upset messages in a row → offers a person |
 
 ---
@@ -333,14 +362,16 @@ tracking API. Type any of these order numbers into the chat. Only three (`EG-581
 
 The **view all orders** link under the chat opens a panel listing every order with its status
 and raw fields. Click a row to look it up. It reads `GET /api/orders`, so it works when the
-page is hosted apart from the server.
+page is hosted apart from the server, and falls back to the orders bundled with the page (with a
+note saying so) when the server can't be reached.
 
 ![View all orders](screenshots/05-view-all-orders.png)
 
-To add a case, add an entry to the file. The `status` picks which conversation route it
-follows (the routes live in `engine.js`); `featured: true` makes it a quick-reply chip.
-When the page is opened straight from disk the browser can't read this file, so it falls back
-to three built-in sample orders.
+To add a case, add an entry to `orders.json`, then run `npm run build:orders`. The `status`
+picks which conversation route it follows (the routes live in `engine.js`); `featured: true`
+makes it a quick-reply chip. Browsers won't let a page opened from disk read a JSON file, so
+`public/orders.js` is a generated copy of it that loads as a script; a test fails if the two
+drift apart.
 
 ---
 

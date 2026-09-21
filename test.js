@@ -82,6 +82,22 @@ function talk(...inputs) {
     const r = engine.noteMood(s, true, engine.apply(s, "lookup_order", { order_id: "EG-10293" }));
     assert.equal(s.state, "stalled"); assert.equal(r.messages.length, 1);
   });
+  await check("mood: one upset message puts an apology in the draft itself, so it survives a failed rewrite", () => {
+    const s = engine.createSession();
+    const r = engine.noteMood(s, true, engine.apply(s, "unclear"));
+    assert.match(r.messages[0].text, /^I'm sorry this has been so frustrating\. /);
+    assert.equal(r.messages[0].kind, "err"); assert.equal(r.messages.length, 1);
+    const calm = engine.noteMood(engine.createSession(), false, engine.apply(engine.createSession(), "unclear"));
+    assert.ok(!/sorry/.test(calm.messages[0].text));
+  });
+  await check("mood: the second upset message offers a person without doubling the apology", () => {
+    const s = engine.createSession();
+    engine.noteMood(s, true, engine.apply(s, "unclear"));
+    const r = engine.noteMood(s, true, engine.apply(s, "unclear"));
+    assert.equal(r.messages.length, 2);
+    assert.ok(!/sorry this has been so frustrating/.test(r.messages[0].text));
+    assert.match(r.messages[1].text, /frustrating, and I'm sorry/);
+  });
   await check("mood: two upset messages in a row offer a person, and keep going resumes", () => {
     const s = engine.createSession();
     engine.noteMood(s, true, engine.apply(s, "lookup_order", { order_id: "EG-10293" }));
@@ -272,6 +288,11 @@ function talk(...inputs) {
     }
   });
 
+  await check("the arrival alert says it will use the contact information on the order", () => {
+    const { said } = talk("EG-77441", "Notify me when it arrives");
+    assert.match(said, /alert you the moment EG-77441 is delivered, using the contact information connected to the order/);
+  });
+
   await check("stalled orders name both options: file a claim or keep watching", () => {
     const text = engine.apply(engine.createSession(), "lookup_order", { order_id: "EG-10293" }).messages[0].text;
     assert.match(text, /file a claim now, or keep watching it/);
@@ -312,13 +333,23 @@ function talk(...inputs) {
     assert.equal(r.messages[0].kind, "err"); assert.match(r.messages[0].text, /can't read its tracking status/);
   });
 
-  await check("setOrders swaps the data the engine uses (how the browser loads the file)", () => {
-    const backup = { ...engine.ORDERS };
-    engine.setOrders({ "EG-12345": { status: "cancelled", on: "Sept 1", where: "test", useCase: "x" } });
-    const s = engine.createSession();
-    assert.equal(engine.apply(s, "lookup_order", { order_id: "EG-12345" }).messages[0].kind, "bot");
-    assert.equal(engine.apply(engine.createSession(), "lookup_order", { order_id: "EG-58120" }).messages[0].kind, "err");
-    engine.setOrders(backup);
+  await check("orders.js (used by pages opened from disk) is in sync with orders.json", () => {
+    const fs = require("fs");
+    assert.equal(fs.readFileSync("public/orders.js", "utf8"), require("./build-orders.js").render(),
+      "public/orders.js is out of date. Run: npm run build:orders");
+  });
+
+  await check("a browser opened from disk (no require, no fetch) still gets all the orders", () => {
+    const fs = require("fs"), vm = require("vm");
+    const win = {}; const ctx = { window: win, self: win };           // like a raw file: no module, no server
+    vm.runInNewContext(fs.readFileSync("public/orders.js", "utf8"), ctx);
+    vm.runInNewContext(fs.readFileSync("public/engine.js", "utf8"), ctx);
+    const browserEngine = win.TrackBotEngine;
+    assert.deepEqual(Object.keys(browserEngine.ORDERS), Object.keys(orders));
+    const s = browserEngine.createSession();
+    const r = browserEngine.apply(s, "lookup_order", { order_id: "EG-78174" });    // an order that was NOT one of the old built-in three
+    assert.match(r.messages[0].text, /customs/); assert.equal(s.state, "in_transit");
+    assert.equal(browserEngine.greeting().chips.length, 3);
   });
 
   /* ---------------- Server + fake Gemini ---------------- */
@@ -445,6 +476,15 @@ function talk(...inputs) {
     assert.match(r.messages[0].text, /can't find a package/);
   });
 
+  await check("a successful rewrite reports no voice fallback", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441" } });
+    voice = () => ["Good news, EG-77441 is still on the move! Should arrive by Sept 19 (last scan: regional hub, Reno NV). Want me to ping you when it lands, or check a different order?"];
+    const r = await say(id, "EG-77441");
+    assert.equal(r.decision.voiceFallback, undefined);
+    voice = () => "HTTP_500";
+  });
+
   await check("natural wording: Gemini rewrites the engine's draft", async () => {
     const id = await newChat();
     fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441" } });
@@ -523,6 +563,8 @@ function talk(...inputs) {
     fake = () => ({ name: "unclear", args: { customer_upset: true } });
     const r1 = await say(id, "this is ridiculous");
     assert.equal(r1.decision.upset, true); assert.equal(r1.messages.length, 1);
+    assert.match(r1.messages[0].text, /sorry this has been so frustrating/);   // the rewrite is off in this test: apology is in the draft
+    assert.match(r1.decision.voiceFallback, /HTTP 500/);                          // and the decision says why the reply is plain
     const r2 = await say(id, "SERIOUSLY??");
     assert.equal(r2.messages.length, 2);
     assert.match(r2.messages[1].text, /frustrating/);

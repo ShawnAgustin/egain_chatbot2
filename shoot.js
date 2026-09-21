@@ -2,6 +2,7 @@
 //   npm start                                   (needs GEMINI_API_KEY in .env)
 //   node shoot.js                               (uses http://localhost:3000)
 //   TRACKBOT_URL=http://localhost:3001 node shoot.js
+//   node shoot.js 04                            (only the shots whose name contains "04")
 // Set PW_CHANNEL=chrome to use an installed Chrome instead of Playwright's own browser.
 const { chromium } = require("playwright");
 
@@ -11,7 +12,8 @@ const shots = [
   { name: "01-delivered-but-missing", steps: ["EG-58120", "nah it's definitely not out there, asked next door too", "I'd like a refund"] },
   { name: "02-error-handling",        steps: ["where is my stuff", "EG-99999"] },
   { name: "03-in-transit-not-lost",   steps: ["EG-77441", "yes please let me know when it gets here"] },
-  { name: "04-upset-handoff",         steps: ["EG-10293", "this is so annoying, it's been weeks", "SERIOUSLY?? this is ridiculous"] },
+  { name: "04-upset-handoff",         steps: ["EG-10293", "this is so annoying, it's been weeks", "SERIOUSLY?? this is ridiculous"],
+    panel: "presentation/panel-upset.png" },     // the chat panel alone, cropped by the slides
   { name: "05-view-all-orders",       steps: [], after: async page => {
       await page.click("#ordersToggle");
       await page.waitForSelector(".orow");
@@ -21,7 +23,7 @@ const shots = [
 
 (async () => {
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
-  for (const shot of shots) {
+  for (const shot of shots.filter(s => !process.argv[2] || s.name.includes(process.argv[2]))) {
     const page = await browser.newPage({ viewportSize: { width: 640, height: 400 }, deviceScaleFactor: 2 });
     // The page's config.js may point at the hosted server; use the one we're running.
     await page.route("**/config.js", r => r.fulfill({ contentType: "text/javascript", body: 'window.TRACKBOT_API = "";' }));
@@ -37,6 +39,7 @@ const shots = [
     // let the whole transcript show in the capture instead of the scrolled view
     await page.addStyleTag({ content: "#thread{height:auto!important;max-height:none!important}" });
     await page.waitForTimeout(150);
+    if (shot.panel) await page.locator(".panel").first().screenshot({ path: shot.panel });
     await page.screenshot({ path: `screenshots/${shot.name}.png`, fullPage: true });
     console.log("captured " + shot.name);
     await page.close();

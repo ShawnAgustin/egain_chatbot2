@@ -13,23 +13,13 @@
    ============================================================ */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory(require("./orders.json"));
-  else root.TrackBotEngine = factory(null);
+  else root.TrackBotEngine = factory(root.TRACKBOT_ORDERS || {});
 })(typeof self !== "undefined" ? self : this, function (loadedOrders) {
 
   /* ---------- Mock data (stands in for a carrier tracking API) ----------
-     The full set lives in orders.json. Node loads it directly; the browser
-     loads it with setOrders(). If a page opened straight from disk can't
-     fetch it, these three keep the offline demo working.                  */
-  const ORDERS = loadedOrders || {
-    "EG-58120": { useCase: "Delivered, left at the front door with a photo", status: "delivered",  on: "Sept 12", where: "left at front door, photo on file", featured: true },
-    "EG-77441": { useCase: "In transit, on schedule", status: "in_transit", eta: "Sept 19", where: "regional hub, Reno NV", featured: true },
-    "EG-10293": { useCase: "Stalled, past due with no movement", status: "stalled",    due: "Sept 14", where: "last scanned Sept 13 in Memphis TN", featured: true }
-  };
-
-  function setOrders(next) {
-    for (const k of Object.keys(ORDERS)) delete ORDERS[k];
-    Object.assign(ORDERS, next);
-  }
+     The orders live in orders.json. Node loads that file directly; a browser gets
+     the same data from orders.js (a generated copy, so it also works from disk). */
+  const ORDERS = loadedOrders;
 
   // The order numbers offered as quick replies. Only a few, not all of them.
   const featuredOrders = () => {
@@ -155,7 +145,7 @@
     },
     claim_type: {
       actions: ["send_replacement", "issue_refund"],
-      reprompt: () => "Replacement or refund?",
+      reprompt: () => "Would you like a replacement or a refund?",
       chips: () => ["Send a replacement", "Refund me"]
     },
     confirm_escalation: {
@@ -252,9 +242,13 @@
      Returns the reply, possibly with the offer added.                     */
   function noteMood(s, upset, r) {
     s.upsets = upset ? s.upsets + 1 : 0;
-    if (s.upsets < UPSET_LIMIT || s.state === "confirm_escalation" || s.state === "ended") return r;
-    return offerPerson(s, r.messages, "I can tell this has been frustrating, and I'm sorry. " +
-      "Would you like me to connect you with a person, or keep going here?");
+    const canOffer = s.state !== "confirm_escalation" && s.state !== "ended";
+    if (upset && s.upsets >= UPSET_LIMIT && canOffer)
+      return offerPerson(s, r.messages, "I can tell this has been frustrating, and I'm sorry. " +
+        "Would you like me to connect you with a person, or keep going here?");
+    // Put the apology in the draft itself, so an upset customer still gets it if Gemini's rewording fails.
+    if (upset && r.messages.length) r.messages[0] = { ...r.messages[0], text: "I'm sorry this has been so frustrating. " + r.messages[0].text };
+    return r;
   }
 
   /* ---------- Execute a decided action ----------
@@ -331,7 +325,8 @@
       case "still_missing":
         return go(s, "claim_type", "Understood — let's open a claim. What would you like as the outcome?");
       case "notify_on_arrival":
-        return go(s, "ended", `Done — I'll alert you the moment ${s.order} is delivered. ${MORE_HELP}`);
+        return go(s, "ended", `Done — I'll alert you the moment ${s.order} is delivered, using the contact ` +
+          `information connected to the order. ${MORE_HELP}`);
       case "new_lookup":
         s.order = null;
         return go(s, "ask_order", "No problem — what's the order number?");
@@ -417,5 +412,5 @@
     return null;
   }
 
-  return { ORDERS, setOrders, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, precheck, ruleIntent, normalizeOrderId, findOrderIds };
+  return { ORDERS, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, precheck, ruleIntent, normalizeOrderId, findOrderIds };
 });

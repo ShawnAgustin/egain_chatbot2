@@ -146,6 +146,7 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
 
   // 4. The engine's reply holds the facts. Let Gemini put it in natural words;
   //    if that fails or drifts from the facts, the plain draft goes out instead.
+  let voiceFallback;
   if (decision.by === "gemini") {
     try {
       reply.messages = await gemini.phraseReply({
@@ -153,13 +154,15 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
       });
     } catch (e) {
       console.warn("[gemini] using the plain draft reply:", e.message);
+      voiceFallback = /abort|timeout/i.test(e.name + e.message) ? "timed out"
+        : (e.message.match(/HTTP \d+/) || ["rejected"])[0];
     }
   }
 
   remember(rec, "Customer", text);
   reply.messages.forEach(m => remember(rec, "Assistant", m.text));
 
-  res.json({ ...reply, decision: { action: decision.action, by: decision.by, rejected: decision.rejected, upset: decision.upset === true } });
+  res.json({ ...reply, decision: { action: decision.action, by: decision.by, rejected: decision.rejected, upset: decision.upset === true, voiceFallback } });
 });
 
 if (require.main === module) {
