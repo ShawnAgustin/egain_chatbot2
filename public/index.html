@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrackBot — lost package assistant</title>
+<style>
+  :root{
+    --ink:#1f2430; --muted:#6b6f7a; --paper:#f4f2ed; --panel:#fff;
+    --line:#ddd9cf; --navy:#243350; --amber:#c97b2e; --amber-dk:#a6621f;
+    --bot:#eceff5; --err:#fbeae4; --err-ink:#7c3317;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:28px 16px; min-height:100vh; display:flex; justify-content:center;
+    background:var(--paper); color:var(--ink);
+    font:15px/1.55 "Iowan Old Style","Palatino Linotype",Georgia,serif;
+  }
+  .wrap{width:100%; max-width:580px}
+  h1{margin:0; font-size:22px; letter-spacing:-.02em; color:var(--navy)}
+  .sub{margin:4px 0 18px; font-size:13.5px; color:var(--muted)}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:4px; overflow:hidden}
+  .bar{background:var(--navy); color:var(--paper); padding:13px 18px; display:flex; align-items:center; gap:9px; font-size:13.5px}
+  .led{width:8px; height:8px; border-radius:50%; background:#74c08e; box-shadow:0 0 0 3px rgba(116,192,142,.25)}
+  .mode{margin-left:auto; font:11.5px "Courier New",monospace; padding:3px 8px; border-radius:10px;
+        background:rgba(255,255,255,.12); color:#d9dfeb}
+  .mode.agent{background:rgba(201,123,46,.28); color:#ffe2c2}
+  #thread{height:430px; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px}
+  .msg{max-width:84%; padding:10px 13px; border-radius:3px; font-size:14.5px; white-space:pre-wrap}
+  .bot{align-self:flex-start; background:var(--bot); border-left:2px solid var(--navy)}
+  .me{align-self:flex-end; background:var(--navy); color:var(--paper); border-right:2px solid var(--amber)}
+  .err{align-self:flex-start; background:var(--err); border-left:2px solid #b8481f; color:var(--err-ink)}
+  .decision{align-self:flex-end; margin-top:-6px; font:11.5px "Courier New",monospace; color:var(--muted)}
+  .decision b{color:var(--amber-dk); font-weight:600}
+  .typing{align-self:flex-start; color:var(--muted); font-size:13px; font-style:italic}
+  #chips{display:flex; flex-wrap:wrap; gap:8px; padding:0 18px 14px}
+  .chip{border:1px solid var(--navy); background:none; color:var(--navy); padding:6px 12px;
+        border-radius:20px; font-size:13px; font-family:inherit; cursor:pointer}
+  .chip:hover{background:var(--navy); color:var(--paper)}
+  form{display:flex; border-top:1px solid var(--line)}
+  input{flex:1; border:0; padding:14px 16px; font-size:14.5px; font-family:inherit; background:none; color:var(--ink); outline:none}
+  button[type=submit]{border:0; background:var(--amber); color:#fff; padding:0 22px; font-size:14px; font-family:inherit; cursor:pointer}
+  button[type=submit]:hover{background:var(--amber-dk)}
+  button:disabled, input:disabled{opacity:.55; cursor:wait}
+  .foot{display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-top:12px; font-size:12.5px; color:var(--muted)}
+  .foot label{white-space:nowrap; cursor:pointer}
+  code{background:#e9e5da; padding:1px 5px; border-radius:3px; font-family:"Courier New",monospace}
+  #thread::-webkit-scrollbar{width:8px}
+  #thread::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px}
+  body.hide-decisions .decision{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>TrackBot</h1>
+  <p class="sub">A chatbot flow for helping a customer track down a lost package. eGain take-home assignment.</p>
+
+  <div class="panel">
+    <div class="bar"><span class="led"></span><span>Lost package assistant</span><span id="mode" class="mode">starting…</span></div>
+    <div id="thread" role="log" aria-live="polite"></div>
+    <div id="chips"></div>
+    <form id="composer">
+      <input id="entry" type="text" placeholder="Type a message…" autocomplete="off" aria-label="Message" maxlength="500">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <div class="foot">
+    <span>Try <code>EG-58120</code> · <code>EG-77441</code> · <code>EG-10293</code>, or type <code>agent</code> anytime.</span>
+    <label><input type="checkbox" id="showDecisions" checked> show agent decisions</label>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="engine.js"></script>
+<script>
+/* ============================================================
+   Front end. Two ways to run:
+     - Served by server.js  → every turn goes to /api/chat, where
+       Gemini decides and the engine responds.
+     - Opened as a file     → the same engine runs right here in
+       the browser, with the rule-based matcher deciding.
+   Either way the rendering below is identical.
+   ============================================================ */
+
+const thread = document.getElementById("thread");
+const chips  = document.getElementById("chips");
+const form   = document.getElementById("composer");
+const entry  = document.getElementById("entry");
+const sendBtn = form.querySelector("button");
+const modeTag = document.getElementById("mode");
+
+let backend = null;   // { submit(text) -> Promise<reply> }
+
+/* ---------- Rendering ---------- */
+function add(className, text) {
+  const el = document.createElement("div");
+  el.className = className;
+  el.textContent = text;
+  thread.appendChild(el);
+  thread.scrollTop = thread.scrollHeight;
+  return el;
+}
+
+function addDecision(d) {
+  if (!d) return;
+  const el = document.createElement("div");
+  el.className = "decision";
+  const action = document.createElement("b");
+  action.textContent = d.action;
+  el.append("→ ", action, ` · ${d.by}` + (d.rejected ? ` (rejected ${d.rejected})` : ""));
+  thread.appendChild(el);
+}
+
+function render(reply) {
+  reply.messages.forEach(m => add("msg " + (m.kind === "err" ? "err" : "bot"), m.text));
+  chips.replaceChildren();
+  (reply.chips || []).forEach(label => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.textContent = label;
+    b.onclick = () => submit(label);
+    chips.appendChild(b);
+  });
+}
+
+function busy(on) {
+  entry.disabled = sendBtn.disabled = on;
+  chips.querySelectorAll("button").forEach(b => (b.disabled = on));
+}
+
+/* ---------- One customer turn ---------- */
+async function submit(raw) {
+  const text = raw.trim();
+  if (!text || entry.disabled) return;
+  add("msg me", text);
+  busy(true);
+  const typing = add("typing", "TrackBot is thinking…");
+  try {
+    const reply = await backend.submit(text);
+    typing.remove();
+    addDecision(reply.decision);
+    render(reply);
+  } catch (e) {
+    typing.remove();
+    add("msg err", "Something went wrong on my end. Please try again in a moment.");
+    console.error(e);
+  } finally {
+    busy(false);
+    entry.focus();
+  }
+}
+
+form.onsubmit = e => { e.preventDefault(); const v = entry.value; entry.value = ""; submit(v); };
+document.getElementById("showDecisions").onchange = e =>
+  document.body.classList.toggle("hide-decisions", !e.target.checked);
+
+/* ---------- Backends ---------- */
+// Where the agent server lives. "" means the same place this page came from.
+const API = String(window.TRACKBOT_API || "").replace(/\/$/, "");
+
+async function serverBackend() {
+  // Short timeout: if the agent server is off, fall back to local mode quickly.
+  const status = await fetch(API + "/api/status", { signal: AbortSignal.timeout(5000) })
+    .then(r => { if (!r.ok) throw new Error("no agent server"); return r.json(); });
+  const newSession = () => fetch(API + "/api/session", { method: "POST" }).then(r => r.json());
+  const start = await newSession();
+  let sessionId = start.sessionId;
+  return {
+    label: status.agent === "gemini" ? `Gemini agent · ${status.model}` : "server · rule-based",
+    agent: status.agent === "gemini",
+    greeting: start,
+    async submit(text) {
+      const r = await fetch(API + "/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, text }),
+        signal: AbortSignal.timeout(20000)
+      });
+      // Free hosts restart after sleeping, which clears open chats.
+      // Rather than show an error, quietly start a fresh conversation.
+      if (r.status === 404) {
+        const fresh = await newSession();
+        sessionId = fresh.sessionId;
+        return { messages: [{ kind: "err", text: "That chat timed out while it was idle, so I've started a fresh one." },
+                            ...fresh.messages], chips: fresh.chips };
+      }
+      const data = await r.json();
+      if (!r.ok) return { messages: [{ kind: "err", text: data.error || "Request failed." }], chips: [] };
+      return data;
+    }
+  };
+}
+
+function localBackend() {
+  const E = window.TrackBotEngine;
+  const s = E.createSession();
+  return {
+    label: "local · rule-based",
+    agent: false,
+    greeting: E.greeting(),
+    async submit(text) {
+      const d = E.ruleIntent(s, text) || { action: "unclear" };
+      const reply = E.apply(s, d.action, d.args);
+      return { ...reply, decision: { action: d.action, by: "rules" } };
+    }
+  };
+}
+
+(async function start() {
+  try {
+    const tryServer = API || location.protocol.startsWith("http");
+    backend = tryServer ? await serverBackend() : localBackend();
+  } catch {
+    backend = localBackend();   // page served without our API — still works
+  }
+  modeTag.textContent = backend.label;
+  modeTag.classList.toggle("agent", backend.agent);
+  render(backend.greeting);
+})();
+</script>
+</body>
+</html>

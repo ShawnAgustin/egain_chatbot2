@@ -1,0 +1,22 @@
+# Render Blueprint — deploys the chat page AND the Gemini agent together
+# from this GitHub repo, as one free web service with one public URL.
+#
+# In Render: New → Blueprint → pick this repo. Render will ask you for
+# GEMINI_API_KEY (it's marked sync: false, so it's never stored in the repo).
+services:
+  - type: web
+    name: trackbot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/status
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false          # Render asks you for this; it never touches GitHub
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: TRUST_PROXY
+        value: "1"           # Render sits behind a proxy; lets rate limits see real visitors
+      - key: RATE_LIMIT_PER_MIN
+        value: "30"
