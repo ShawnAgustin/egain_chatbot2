@@ -9,7 +9,10 @@
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
-const TIMEOUT_MS = 8000;
+// The page gives up on a whole turn after 20s, and a turn makes both calls in a row.
+// Deciding the move matters most (a miss drops to keyword rules); a plain draft is a fine fallback for wording.
+const DECIDE_TIMEOUT_MS = 12000;
+const VOICE_TIMEOUT_MS = 5000;
 
 const SYSTEM = `You are the decision layer of TrackBot, a customer service assistant that helps
 customers whose package hasn't arrived. In this step you don't write messages to the customer.
@@ -64,7 +67,7 @@ async function chooseAction({ allowed, ACTIONS, transcript, text, state }) {
   };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), DECIDE_TIMEOUT_MS);
   try {
     const res = await fetch(ENDPOINT, {
       method: "POST",
@@ -134,7 +137,7 @@ async function phraseReply({ transcript, text, messages }) {
   };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), VOICE_TIMEOUT_MS);
   try {
     const res = await fetch(ENDPOINT, {
       method: "POST",
@@ -163,4 +166,4 @@ async function phraseReply({ transcript, text, messages }) {
   }
 }
 
-module.exports = { chooseAction, phraseReply, MODEL };
+module.exports = { chooseAction, phraseReply, MODEL, DECIDE_TIMEOUT_MS, VOICE_TIMEOUT_MS };

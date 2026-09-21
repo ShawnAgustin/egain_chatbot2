@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TrackBot — eGain Analyst I take-home</title>
+<style>
+  @page { size: 1280px 720px; margin: 0 }
+  :root{
+    --ink:#1f2430; --muted:#5f6675; --paper:#f4f2ed; --panel:#fff; --line:#ddd9cf;
+    --navy:#243350; --amber:#c97b2e; --amber-dk:#a6621f; --bot:#eceff5; --err:#fbeae4; --err-ink:#7c3317; --green:#3b6d11;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{background:#d8d5cc}
+  body{font:20px/1.4 -apple-system,"Helvetica Neue",Arial,sans-serif; color:var(--ink); -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .slide{position:relative; width:1280px; height:720px; overflow:hidden; background:var(--paper); padding:34px 56px 30px; page-break-after:always; break-after:page; margin:0 auto}
+  .slide + .slide{margin-top:24px}
+  @media print{ html,body{background:none} .slide + .slide{margin-top:0} *{box-shadow:none !important} }
+  .slide::before{content:""; position:absolute; left:0; top:0; bottom:0; width:10px; background:var(--navy)}
+  .slide::after{content:""; position:absolute; left:0; top:0; height:10px; width:170px; background:var(--amber)}
+  header{display:flex; justify-content:space-between; align-items:center; font-size:15px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
+  header b{color:var(--amber-dk); font-weight:700}
+  h1{font:600 39px/1.15 "Iowan Old Style","Palatino Linotype",Georgia,serif; color:var(--navy); margin:12px 0 18px; letter-spacing:-.01em}
+  footer{position:absolute; left:56px; right:56px; bottom:18px; display:flex; justify-content:space-between; font-size:13px; color:var(--muted)}
+  strong{color:var(--navy)}
+  small{font-size:.72em; color:var(--muted); display:block; font-weight:400}
+
+  /* ---------- Slide 1 ---------- */
+  .c1{display:grid; grid-template-columns:520px 1fr; gap:38px; align-items:start}
+  .points{list-style:none; counter-reset:p; display:flex; flex-direction:column; gap:20px}
+  .points li{counter-increment:p; position:relative; padding-left:46px; font-size:19.5px; line-height:1.4}
+  .points li::before{content:counter(p); position:absolute; left:0; top:1px; width:32px; height:32px; border-radius:50%; background:var(--navy); color:#fff;
+                     font:700 16px/32px -apple-system,Arial,sans-serif; text-align:center}
+  .flow{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px 20px 16px; box-shadow:0 8px 24px rgba(36,51,80,.08)}
+  .frow{display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:14px}
+  .node{background:#f1efe8; border:1px solid #c9c6bb; border-radius:9px; padding:8px 11px; font-size:15.5px; font-weight:600; text-align:center; line-height:1.25}
+  .node.dia{background:#eeedfe; border-color:#b7b2ea; color:#26215c}
+  .node.err{background:var(--err); border-color:#e5b7a6; color:var(--err-ink)}
+  .node.ok{background:#eaf3de; border-color:#b9d49a; color:#27500a}
+  .arr{color:#73726c; font-size:22px}
+  .lanes{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+  .lane{display:flex; flex-direction:column; align-items:stretch; gap:5px}
+  .tag{text-align:center; font-size:13px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#fff; background:var(--navy); border-radius:20px; padding:3px 6px}
+  .tag.a{background:var(--amber)} .tag.r{background:#b8481f}
+  .darr{text-align:center; color:#73726c; line-height:1; font-size:18px}
+  .any{margin-top:14px; border:1.5px dashed #9a988f; border-radius:11px; padding:10px 14px}
+  .any h4{font-size:13px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:7px}
+  .any ul{list-style:none; display:grid; gap:5px; font-size:15.5px}
+  .any li b{color:var(--navy)}
+
+  /* ---------- Slide 2 ---------- */
+  .c2{display:grid; grid-template-columns:1fr 470px; gap:34px; align-items:start}
+  .arch{display:flex; flex-direction:column; align-items:stretch; gap:6px}
+  .box{background:var(--panel); border:1.5px solid var(--navy); border-radius:12px; padding:10px 15px; font-size:16.5px}
+  .box b{color:var(--navy); font-size:18px}
+  .box.amber{border-color:var(--amber)}
+  .two{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  .lbl{text-align:center; font-size:13.5px; color:var(--muted); line-height:1}
+  .facts{margin-top:14px; display:grid; gap:9px; font-size:17px; list-style:none}
+  .facts li{padding-left:22px; position:relative}
+  .facts li::before{content:""; position:absolute; left:2px; top:9px; width:9px; height:9px; border-radius:50%; background:var(--amber)}
+  .crop{position:relative; width:470px; height:476px; overflow:hidden; border-radius:12px; border:1px solid var(--line); background:#fff;
+        box-shadow:0 8px 24px rgba(36,51,80,.14)}
+  .crop img{position:absolute; width:1040px; left:-285px; top:-368px; max-width:none}
+  .cap{font-size:13.5px; color:var(--muted); margin-top:7px}
+
+  /* ---------- Slide 3 ---------- */
+  .rows{display:flex; flex-direction:column; gap:17px}
+  .row{display:grid; grid-template-columns:350px 1fr; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden}
+  .row .q{background:var(--navy); color:#fff; padding:16px 20px; font-size:20px; font-weight:600; display:flex; align-items:center; line-height:1.3}
+  .row .a{padding:17px 24px; font-size:18.5px; line-height:1.42}
+  .row .a b{color:var(--navy)}
+
+  /* ---------- Slide 4 ---------- */
+  .c4{display:grid; grid-template-columns:1fr 1fr; gap:24px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px 26px}
+  .card h3{font:600 22px "Iowan Old Style",Georgia,serif; color:var(--navy); margin-bottom:10px}
+  .card ul{list-style:none; display:grid; gap:13px; font-size:19px}
+  .card li{padding-left:22px; position:relative}
+  .card li::before{content:""; position:absolute; left:2px; top:10px; width:9px; height:9px; border-radius:50%; background:var(--amber)}
+  .measure{margin-top:24px; background:var(--navy); color:#fff; border-radius:14px; padding:20px 28px; font-size:19.5px; display:flex; gap:22px; align-items:center}
+  .measure b{color:#ffd9b0; font-size:15px; letter-spacing:.07em; text-transform:uppercase; white-space:nowrap}
+</style>
+</head>
+<body>
+
+<!-- ============ 1 · DESIGN ============ -->
+<section class="slide">
+  <header><span><b>TrackBot</b> · lost package assistant</span><span>1 / 4 · Design choices</span></header>
+  <h1>Work out what's really wrong first, then act</h1>
+  <div class="c1">
+    <ol class="points">
+      <li><strong>Triage before anything else.</strong> "Lost package" is usually one of three situations, and only one is actually lost: <em>delivered but missing</em>, <em>still in transit</em>, or <em>past due with no movement</em>. Each gets a different path.</li>
+      <li><strong>A designed flow with natural language on top.</strong> Customers type however they talk. The steps are fixed, so every path is predictable and testable.</li>
+      <li><strong>Errors handled by kind.</strong> A bad format and an unknown order get different messages. Three unmatched messages, or two upset ones, offer a person. A new order number mid-chat asks before switching.</li>
+      <li><strong>Never leave the customer hanging.</strong> Every reply ends by asking what they want and naming the options.</li>
+    </ol>
+
+    <div class="flow">
+      <div class="frow">
+        <div class="node">Ask for<br>order #</div><span class="arr">→</span>
+        <div class="node dia">Valid format?<br>Order found?</div><span class="arr">→</span>
+        <div class="node dia">Tracking<br>status?</div>
+      </div>
+      <div class="lanes">
+        <div class="lane">
+          <div class="tag">Delivered</div>
+          <div class="node">Ask: looked around?<small>porch · neighbors</small></div><div class="darr">↓</div>
+          <div class="node">Still missing → claim</div><div class="darr">↓</div>
+          <div class="node ok">Replacement or refund</div>
+        </div>
+        <div class="lane">
+          <div class="tag a">In transit</div>
+          <div class="node">Show last scan + ETA<small>it isn't lost</small></div><div class="darr">↓</div>
+          <div class="node">Offer arrival alert</div><div class="darr">↓</div>
+          <div class="node ok">Close out</div>
+        </div>
+        <div class="lane">
+          <div class="tag r">Past due</div>
+          <div class="node">Treat as lost<small>apologize</small></div><div class="darr">↓</div>
+          <div class="node">Claim now, or wait?</div><div class="darr">↓</div>
+          <div class="node ok">Replacement or refund</div>
+        </div>
+      </div>
+      <div class="any">
+        <h4>At any step</h4>
+        <ul>
+          <li><b>Ask for "agent"</b> → hand off to a person</li>
+          <li><b>Upset twice in a row, or 3 misses</b> → offer a person, or keep going</li>
+          <li><b>Different order number</b> → "still working on X, switch?"</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <footer><span>Full flowchart: flowchart.svg in the repo</span><span>11 tracking statuses across 20 mock orders all map onto these routes</span></footer>
+</section>
+
+<!-- ============ 2 · IMPLEMENTATION ============ -->
+<section class="slide">
+  <header><span><b>TrackBot</b> · lost package assistant</span><span>2 / 4 · Technical implementation</span></header>
+  <h1>Gemini decides and words it. The app holds the facts.</h1>
+  <div class="c2">
+    <div>
+      <div class="arch">
+        <div class="box"><b>Browser</b> · HTML / CSS / vanilla JS chat UI<br>Sends only the customer's text and a session id</div>
+        <div class="lbl">↓ &nbsp;text only</div>
+        <div class="box amber"><b>Node + Express server</b> · holds conversation state and the API key<br>Guardrails, rate limits, CORS, fallbacks</div>
+        <div class="lbl">↓ &nbsp;each turn</div>
+        <div class="two">
+          <div class="box"><b>engine.js</b> · the flow<br>9 states, 18 moves, the facts, the draft wording</div>
+          <div class="box"><b>Gemini</b> (function calling)<br>① pick one legal move &nbsp;② reword the draft</div>
+        </div>
+      </div>
+      <ul class="facts">
+        <li><strong>Only legal moves are offered</strong> to Gemini each step, and it must call exactly one. Illegal picks are rejected.</li>
+        <li><strong>The reword is checked.</strong> If it changes a number, date or order id, or drops the follow-up question, the plain draft is sent.</li>
+        <li><strong>Graceful fallbacks.</strong> Gemini down → keyword rules. Server down → the same engine runs in the browser.</li>
+        <li><strong>90 automated tests</strong> cover every order, error path, edge case and guardrail. Deployed free on Render.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="crop"><img src="../screenshots/04-upset-handoff.png" alt="TrackBot conversation with an upset customer"></div>
+      <div class="cap">Agent mode: each customer message shows the move chosen, who chose it, and an upset flag. Two upset in a row offers a person.</div>
+    </div>
+  </div>
+  <footer><span>Node 18+ · Express · Gemini API · Render</span><span>Mock data in public/orders.json stands in for a carrier API</span></footer>
+</section>
+
+<!-- ============ 3 · CHALLENGES ============ -->
+<section class="slide">
+  <header><span><b>TrackBot</b> · lost package assistant</span><span>3 / 4 · Challenges faced</span></header>
+  <h1>Making an AI natural without making it unsafe</h1>
+  <div class="rows">
+    <div class="row"><div class="q">Letting an LLM talk without letting it promise things</div>
+      <div class="a"><b>Split the jobs.</b> The app owns state and facts; Gemini only picks a legal move and rewords a draft. Rewrites that change a fact are thrown away, and a manipulated model can only pick the wrong move from a short list.</div></div>
+    <div class="row"><div class="q">Sounding human, but never leaving the customer stuck</div>
+      <div class="a"><b>Tuned by testing real chats.</b> Early replies ended on statements, and frustration alone handed off to a person. Now every reply asks what to do next, and a person is offered only when asked, after 3 misses, or after 2 upset messages.</div></div>
+    <div class="row"><div class="q">Messy real-world inputs</div>
+      <div class="a"><b>20 mock orders covering 11 statuses</b> exposed gaps: a customer pasting a new order number mid-chat was "unclear", and a wrong-address delivery was told to check the door. Now the bot confirms before switching, and misdelivered orders go straight to a claim.</div></div>
+    <div class="row"><div class="q">Hosting and connecting a free server</div>
+      <div class="a"><b>CORS, cold starts and file:// pages.</b> A page opened from disk has a null origin, and the free Render tier sleeps for 30 to 60 seconds. The page falls back to keyword mode so the demo never breaks, and the debug panel explains why it fell back.</div></div>
+  </div>
+  <footer><span>&nbsp;</span><span>Each fix above has a test</span></footer>
+</section>
+
+<!-- ============ 4 · NEXT STEPS ============ -->
+<section class="slide">
+  <header><span><b>TrackBot</b> · lost package assistant</span><span>4 / 4 · With more time</span></header>
+  <h1>From prototype to something customers can rely on</h1>
+  <div class="c4">
+    <div class="card">
+      <h3>Make it real</h3>
+      <ul>
+        <li><strong>Real carrier lookups</strong> (USPS, UPS, FedEx) in place of the mock orders.</li>
+        <li><strong>A true handoff.</strong> Open a ticket or live chat and pass the full transcript so customers never repeat themselves.</li>
+        <li><strong>Claims and alerts that actually happen:</strong> file the claim, send the email or SMS.</li>
+        <li><strong>Persistent sessions</strong> so a restart or a sleeping server doesn't lose the chat.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Make it safer and smarter</h3>
+      <ul>
+        <li><strong>Check meaning, not just numbers,</strong> when validating Gemini's rewording.</li>
+        <li><strong>An evaluation set</strong> of messy real phrasings to score moves before each change.</li>
+        <li><strong>Production hardening:</strong> tighter CORS, authentication, and per-user rate limits.</li>
+        <li><strong>More scenarios and languages</strong> on the same flow engine.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="measure"><b>What I'd measure</b><span>Where customers drop out of the flow, how often the bot resolves without a person, how often it falls back to keyword rules, and how often Gemini's rewording is rejected.</span></div>
+  <footer><span>github.com/ShawnAgustin/egain_chatbot2</span><span>Live demo: trackbot-3w10.onrender.com</span></footer>
+</section>
+
+</body>
+</html>

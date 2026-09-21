@@ -105,6 +105,14 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
   if (!text) return res.status(400).json({ error: "Empty message." });
   rec.touched = Date.now();
 
+  // More than one order number in the message: ask which first, without spending a Gemini call.
+  const which = engine.precheck(rec.s, text);
+  if (which) {
+    remember(rec, "Customer", text);
+    which.messages.forEach(m => remember(rec, "Assistant", m.text));
+    return res.json({ ...which, decision: { action: "which_order", by: "rules" } });
+  }
+
   const allowed = engine.allowedActions(rec.s);
   let decision = null;
 

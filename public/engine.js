@@ -104,7 +104,9 @@
     },
     already_checked:   { description: "The customer says they already looked around the delivery spot, with neighbors, or with household members, and the package is not there." },
     will_look:         { description: "The customer wants to go look around the delivery spot before continuing." },
-    found_it:          { description: "The customer found the package." },
+    found_it:          { description: "The customer found the package, or says it just arrived or turned up. This can happen at any step." },
+    no_order_number:   { description: "The customer says they don't have or can't find their order number, or says they never placed the order." },
+    say_goodbye:       { description: "The customer is finished: thanks, no thanks, that's all, goodbye." },
     still_missing:     { description: "The customer looked again and the package is still missing." },
     notify_on_arrival: { description: "The customer wants an alert when the package is delivered." },
     new_lookup:        { description: "The customer wants to look up a different order." },
@@ -125,7 +127,7 @@
      chips:    the quick replies to show                                           */
   const STATES = {
     ask_order: {
-      actions: ["lookup_order"],
+      actions: ["lookup_order", "no_order_number"],
       ask: () => "What's the order number?",
       reprompt: () => "That doesn't look like an order number. They're two letters, a dash, then " +
                       "4–6 digits — like EG-58120. Mind checking your confirmation email?",
@@ -167,7 +169,7 @@
       chips: s => [`Yes, check ${s.pendingOrder}`, `No, stay with ${s.order}`]
     },
     ended: {
-      actions: ["new_lookup"],
+      actions: ["new_lookup", "say_goodbye"],
       reprompt: () => "We're all wrapped up here — want to look up another package?",
       chips: () => ["Start a new lookup"]
     }
@@ -183,9 +185,22 @@
                       "What's the order number?")], featuredOrders());
   }
 
+  // Steps where a package can turn up. Only these offer found_it.
+  const CAN_FIND = ["looked_around", "recheck", "in_transit", "stalled", "claim_type"];
+
   // Looking up an order is always allowed: customers paste a different order number mid-chat.
   function allowedActions(s) {
-    return [...new Set([...STATES[s.state].actions, "lookup_order", "escalate_to_agent", "unclear"])];
+    const extra = CAN_FIND.includes(s.state) ? ["found_it"] : [];
+    return [...new Set([...STATES[s.state].actions, "lookup_order", ...extra, "escalate_to_agent", "unclear"])];
+  }
+
+  // Every order number in a message, however it's written ("eg58120", "EG 58120", "EG-58120").
+  // A bare two-letter prefix plus a space is only trusted for "EG", so "in 2024" is not an order.
+  function findOrderIds(text) {
+    const found = new Set(), re = /\b(?:(eg)[\s-]?|([a-z]{2})-)(\d{4,6})\b/gi;
+    let m;
+    while ((m = re.exec(String(text || "")))) found.add(`${(m[1] || m[2]).toUpperCase()}-${m[3]}`);
+    return [...found];
   }
 
   /* ---------- Helpers ---------- */
@@ -303,6 +318,14 @@
           "there, a claim is the fastest route. What would you like as the outcome?");
       case "will_look":
         return go(s, "recheck", "Go ahead and take a look — I'll be here. Come back and tell me either way.");
+      case "no_order_number":
+        return offerPerson(s, [], "No problem. I can't look anything up without an order number, but a person can " +
+          "search by your name or email. Would you like me to connect you with one, or keep looking for the number " +
+          "here? It's usually in your confirmation email.");
+
+      case "say_goodbye":
+        return go(s, "ended", "You're welcome! I'm here whenever you need to check another order.");
+
       case "found_it":
         return go(s, "ended", `That's a relief. Glad it turned up. ${MORE_HELP}`);
       case "still_missing":
@@ -326,37 +349,53 @@
     return miss(s);
   }
 
+  /* ---------- Before any decision maker runs ----------
+     Two order numbers in one message: ask which to start with, instead of
+     guessing or calling it a format error. Returns a reply, or null.      */
+  function precheck(s, text) {
+    const ids = findOrderIds(text);
+    if (ids.length < 2) return null;
+    const shown = ids.slice(0, 4);
+    return reply([bot(`I see ${ids.length} order numbers in that message: ${shown.join(", ")}. Which one should I look at first?`)], shown);
+  }
+
   /* ---------- Rule-based decision maker ----------
      Used in the browser, when no API key is set, and as the
      fallback when a Gemini call fails. Returns null if unsure.   */
   const AGENT_WORDS = /\b(agent|human|representative|(?:a|real) person|(?:talk|speak) to (?:someone|somebody))\b/i;
 
+  const FOUND = /\b(found (it|the|my)|it (just )?(came|arrived|showed up|turned up|got here)|it'?s here|turned up)\b/i;
+  const NEGATION = /\b(not|never|nothing|no|haven'?t|hasn'?t|didn'?t|can'?t|couldn'?t|won'?t)\b|n't/i;
+
   function ruleIntent(s, text) {
     const t = text.trim();
-    if (normalizeOrderId(t)) return { action: "lookup_order", args: { order_id: t } };
     if (s.state === "confirm_switch") {
       if (/^(yes|yeah|yep|sure|ok)|switch|instead/i.test(t)) return { action: "switch_order" };
       if (/^no|stay|keep|continue|current/i.test(t)) return { action: "stay_on_order" };
-      return null;
     }
+    const id = normalizeOrderId(t) || findOrderIds(t)[0];
+    if (id) return { action: "lookup_order", args: { order_id: id } };
+    if (s.state === "confirm_switch") return null;
     if (s.state === "confirm_escalation") {
       if (/^yes|agent|human|person/i.test(t)) return { action: "escalate_to_agent" };
       if (/^no|keep going|continue/i.test(t)) return { action: "keep_going" };
       return null;
     }
     if (AGENT_WORDS.test(t)) return { action: "escalate_to_agent" };
+    if (CAN_FIND.includes(s.state) && FOUND.test(t) && !NEGATION.test(t)) return { action: "found_it" };
 
     switch (s.state) {
       case "ask_order":
-        // Hand anything order-ish to lookup_order; the engine rejects bad shapes.
-        return normalizeOrderId(t) ? { action: "lookup_order", args: { order_id: t } } : null;
+        if (/(don'?t|do not|can'?t|cannot|haven'?t|no|lost|lose)\b.*\b(order (number|#|no|id)|confirmation)|never (ordered|placed)|didn'?t (order|place)/i.test(t))
+          return { action: "no_order_number" };
+        return null;
       case "looked_around":
-        if (/go look|i'll|later|will check/i.test(t)) return { action: "will_look" };
+        if (/go look|i'll|later|will check|let me (check|look|go)|going to (check|look)|hold on|one (sec|moment)/i.test(t)) return { action: "will_look" };
         if (/check|looked|already|yes|missing|nope|not there/i.test(t)) return { action: "already_checked" };
         return null;
       case "recheck":
-        if (/found|got it|turned up|yes/i.test(t)) return { action: "found_it" };
-        if (/still|missing|no|nothing/i.test(t)) return { action: "still_missing" };
+        if (/^(yes|yeah|yep)\b/i.test(t)) return { action: "found_it" };
+        if (/still|missing|no|nothing|not/i.test(t)) return { action: "still_missing" };
         return null;
       case "in_transit":
         if (/notify|alert|tell me/i.test(t)) return { action: "notify_on_arrival" };
@@ -368,14 +407,15 @@
         return null;
       case "claim_type":
         if (/replace|resend|send/i.test(t)) return { action: "send_replacement" };
-        if (/refund|money back|credit/i.test(t)) return { action: "issue_refund" };
+        if (/refund|money back|reimburs/i.test(t)) return { action: "issue_refund" };
         return null;
       case "ended":
         if (/new lookup|another|different|track/i.test(t)) return { action: "new_lookup" };
+        if (/^(no|nope|nah)\b|thank|thx|bye|that'?s (all|it)|all set|i'?m good|we'?re good|nothing else/i.test(t)) return { action: "say_goodbye" };
         return null;
     }
     return null;
   }
 
-  return { ORDERS, setOrders, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, ruleIntent, normalizeOrderId };
+  return { ORDERS, setOrders, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, precheck, ruleIntent, normalizeOrderId, findOrderIds };
 });

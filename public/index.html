@@ -269,6 +269,8 @@ async function localBackend() {
     agent: false,
     greeting: E.greeting(),
     async submit(text) {
+      const which = E.precheck(s, text);
+      if (which) return { ...which, decision: { action: "which_order", by: "rules" } };
       const d = E.ruleIntent(s, text) || { action: "unclear" };
       const reply = E.apply(s, d.action, d.args);
       return { ...reply, decision: { action: d.action, by: "rules" } };

@@ -161,6 +161,74 @@ function talk(...inputs) {
     assert.equal(r.messages[0].kind, "err"); assert.equal(s.state, "ask_order");
   });
 
+  /* ---------------- Edge cases found by probing ---------------- */
+  console.log("\nEdge cases");
+
+  await check("keyword mode: 'store credit' is not a refund", () => {
+    const { s, said } = talk("EG-10293", "File a claim", "can I get store credit instead?");
+    assert.equal(s.state, "claim_type"); assert.ok(!/refund will post/.test(said));
+  });
+  await check("found it is accepted at every step where a package can turn up", () => {
+    for (const path of [["EG-58120"], ["EG-58120", "I'll go look now"], ["EG-77441"], ["EG-10293"], ["EG-10293", "File a claim"]]) {
+      const { s } = talk(...path, "I found it!");
+      assert.equal(s.state, "ended", path.join(" > "));
+    }
+    const s = engine.createSession();
+    assert.ok(!engine.allowedActions(s).includes("found_it"), "not offered before any order");
+  });
+  await check("keyword mode: 'I haven't found it' is not found_it", () => {
+    assert.notEqual(talk("EG-58120", "I haven't found it").s.state, "ended");
+    assert.notEqual(talk("EG-58120", "I'll go look now", "not found yet").s.state, "ended");
+  });
+  await check("keyword mode: 'it just arrived' counts as found", () => {
+    assert.equal(talk("EG-77441", "oh it just arrived").s.state, "ended");
+  });
+  await check("saying thanks or no at the end is a friendly goodbye, not an error", () => {
+    for (const bye of ["thanks!", "no that's all", "nope, I'm good", "bye"]) {
+      const { s, r } = talk("EG-77441", "Notify me when it arrives", bye);
+      assert.equal(r.messages[0].kind, "bot", bye); assert.match(r.messages[0].text, /welcome/);
+      assert.equal(s.state, "ended"); assert.equal(s.misses, 0);
+    }
+    assert.equal(talk("EG-77441", "Notify me when it arrives", "another order please").s.state, "ask_order");
+  });
+  await check("keyword mode: an order number inside a sentence is found", () => {
+    assert.equal(talk("my order number is eg 58120 thanks").s.state, "looked_around");
+    assert.equal(talk("it's EG-77441, thx").s.order, "EG-77441");
+  });
+  await check("keyword mode: a year or random digits are not treated as an order", () => {
+    assert.equal(talk("it was supposed to come in 2024").s.state, "ask_order");
+    assert.deepEqual(engine.findOrderIds("call 5551234567 or in 2024"), []);
+  });
+  await check("two order numbers in one message ask which to start with", () => {
+    const s = engine.createSession();
+    const r = engine.precheck(s, "EG-58120 and eg 77441 please");
+    assert.match(r.messages[0].text, /2 order numbers/); assert.deepEqual(r.chips, ["EG-58120", "EG-77441"]);
+    assert.equal(s.state, "ask_order"); assert.equal(s.misses, 0);
+    assert.equal(engine.precheck(s, "just EG-58120"), null);
+  });
+  await check("'I don't have my order number' offers a person right away", () => {
+    for (const said of ["I don't have my order number", "can't find my confirmation email", "I never ordered anything"]) {
+      const s = engine.createSession();
+      assert.equal(engine.ruleIntent(s, said)?.action, "no_order_number", said);
+      const r = engine.apply(s, "no_order_number");
+      assert.equal(s.state, "confirm_escalation"); assert.match(r.messages[0].text, /connect you with one/);
+      assert.deepEqual(r.chips, ["Yes, get me an agent", "No, let's keep going"]);
+      engine.apply(s, "keep_going"); assert.equal(s.state, "ask_order");
+    }
+  });
+  await check("no_order_number is only available at the first step", () => {
+    const s = engine.createSession(); engine.apply(s, "lookup_order", { order_id: "EG-10293" });
+    assert.ok(!engine.allowedActions(s).includes("no_order_number"));
+  });
+  await check("keyword mode: 'let me check' means go look, not already checked", () => {
+    assert.equal(talk("EG-58120", "let me check").s.state, "recheck");
+  });
+  await check("Gemini timeouts: more time to decide than to reword, and both fit in the page's 20s", () => {
+    const g = require("./gemini.js");
+    assert.ok(g.DECIDE_TIMEOUT_MS > g.VOICE_TIMEOUT_MS);
+    assert.ok(g.DECIDE_TIMEOUT_MS + g.VOICE_TIMEOUT_MS < 20000);
+  });
+
   /* ---------------- The order data (public/orders.json) ---------------- */
   console.log("\nOrders — every case in orders.json");
 
@@ -262,10 +330,12 @@ function talk(...inputs) {
   let fake = () => ({ name: "unclear" });                      // swapped per test
   let voice = () => "HTTP_500";                                // the rewrite call; off unless a test turns it on
   let lastGeminiRequest = null;
+  let geminiCalls = 0;
   let lastDecisionRequest = null;                              // the pick-a-move call (not the rewrite)
   const realFetch = global.fetch;
   global.fetch = async (url, opts) => {
     if (String(url).includes("generativelanguage.googleapis.com")) {
+      geminiCalls++;
       lastGeminiRequest = { url: String(url), headers: opts.headers, body: JSON.parse(opts.body) };
       const isVoice = Boolean(lastGeminiRequest.body.generationConfig?.responseSchema);
       if (!isVoice) lastDecisionRequest = lastGeminiRequest;
@@ -314,7 +384,7 @@ function talk(...inputs) {
     fake = () => ({ name: "unclear" });
     await say(id, "hello");
     const names = lastDecisionRequest.body.tools[0].functionDeclarations.map(f => f.name).sort();
-    assert.deepEqual(names, ["escalate_to_agent", "lookup_order", "unclear"]);
+    assert.deepEqual(names, ["escalate_to_agent", "lookup_order", "no_order_number", "unclear"]);
     assert.equal(lastDecisionRequest.body.toolConfig.functionCallingConfig.mode, "ANY");
   });
 
@@ -342,6 +412,17 @@ function talk(...inputs) {
     const offered2 = lastDecisionRequest.body.tools[0].functionDeclarations.map(f => f.name).sort();
     assert.deepEqual(offered2, ["escalate_to_agent", "lookup_order", "stay_on_order", "switch_order", "unclear"]);
     assert.match(r2.messages[0].text, /hasn't actually shipped yet/);
+  });
+
+  await check("two order numbers in one message: server asks which, without calling Gemini", async () => {
+    const id = await newChat();
+    const before = geminiCalls;
+    const r = await say(id, "EG-58120 and EG-77441");
+    assert.equal(geminiCalls, before);
+    assert.equal(r.decision.action, "which_order"); assert.deepEqual(r.chips, ["EG-58120", "EG-77441"]);
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441" } });
+    const r2 = await say(id, "EG-77441");
+    assert.match(r2.messages[0].text, /still moving/);
   });
 
   await check("API key travels in a header, never the URL", async () => {
