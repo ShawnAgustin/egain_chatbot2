@@ -130,6 +130,19 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
   }
 
   const reply = engine.apply(rec.s, decision.action, decision.args);
+
+  // 4. The engine's reply holds the facts. Let Gemini put it in natural words;
+  //    if that fails or drifts from the facts, the plain draft goes out instead.
+  if (decision.by === "gemini") {
+    try {
+      reply.messages = await gemini.phraseReply({
+        transcript: rec.transcript.join("\n"), text, messages: reply.messages
+      });
+    } catch (e) {
+      console.warn("[gemini] using the plain draft reply:", e.message);
+    }
+  }
+
   remember(rec, "Customer", text);
   reply.messages.forEach(m => remember(rec, "Assistant", m.text));
 

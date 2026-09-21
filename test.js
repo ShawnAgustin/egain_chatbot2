@@ -78,11 +78,20 @@ function talk(...inputs) {
   process.env.GEMINI_API_KEY = "test-key";
   process.env.ALLOWED_ORIGINS = "https://shawn.github.io";
   let fake = () => ({ name: "unclear" });                      // swapped per test
+  let voice = () => "HTTP_500";                                // the rewrite call; off unless a test turns it on
   let lastGeminiRequest = null;
+  let lastDecisionRequest = null;                              // the pick-a-move call (not the rewrite)
   const realFetch = global.fetch;
   global.fetch = async (url, opts) => {
     if (String(url).includes("generativelanguage.googleapis.com")) {
       lastGeminiRequest = { url: String(url), headers: opts.headers, body: JSON.parse(opts.body) };
+      const isVoice = Boolean(lastGeminiRequest.body.generationConfig?.responseSchema);
+      if (!isVoice) lastDecisionRequest = lastGeminiRequest;
+      if (isVoice) {
+        const v = voice(lastGeminiRequest.body);
+        if (v === "HTTP_500") return new Response("boom", { status: 500 });
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(v) }] } }] }));
+      }
       const out = fake(lastGeminiRequest.body);
       if (out === "HTTP_500") return new Response("boom", { status: 500 });
       return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ functionCall: out }] } }] }));
@@ -122,9 +131,9 @@ function talk(...inputs) {
     const id = await newChat();
     fake = () => ({ name: "unclear" });
     await say(id, "hello");
-    const names = lastGeminiRequest.body.tools[0].functionDeclarations.map(f => f.name).sort();
+    const names = lastDecisionRequest.body.tools[0].functionDeclarations.map(f => f.name).sort();
     assert.deepEqual(names, ["escalate_to_agent", "lookup_order", "unclear"]);
-    assert.equal(lastGeminiRequest.body.toolConfig.functionCallingConfig.mode, "ANY");
+    assert.equal(lastDecisionRequest.body.toolConfig.functionCallingConfig.mode, "ANY");
   });
 
   await check("API key travels in a header, never the URL", async () => {
@@ -145,6 +154,60 @@ function talk(...inputs) {
     fake = () => ({ name: "lookup_order", args: { order_id: "EG-00001" } });
     const r = await say(id, "it's the one from last week");
     assert.match(r.messages[0].text, /can't find a package/);
+  });
+
+  await check("natural wording: Gemini rewrites the engine's draft", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441" } });
+    voice = () => ["Good news, EG-77441 is still on the move! It was last scanned at the regional hub, " +
+                   "Reno NV, and should arrive by Sept 19."];
+    const r = await say(id, "ugh where is EG-77441");
+    assert.match(r.messages[0].text, /Good news, EG-77441 is still on the move/);
+    assert.equal(r.messages[0].kind, "bot");
+    const sent = lastGeminiRequest.body.contents[0].parts[0].text;
+    assert.match(sent, /still moving/);                        // the engine's draft is what it rewrites
+    assert.match(sent, /ugh where is EG-77441/);               // and it sees what the customer said
+    assert.ok(!lastGeminiRequest.body.tools);                  // no tools: it can't take actions here
+    voice = () => "HTTP_500";
+  });
+
+  await check("natural wording: error messages keep their kind", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "unclear" });
+    voice = () => ["Hmm, I didn't catch an order number in that. They're two letters, a dash, then 4–6 digits, " +
+                   "like EG-58120 — could you check your confirmation email?"];
+    const r = await say(id, "blah");
+    assert.equal(r.messages[0].kind, "err");
+    assert.match(r.messages[0].text, /^Hmm, I didn't catch/);
+    voice = () => "HTTP_500";
+  });
+
+  await check("natural wording: a rewrite that changes a fact is discarded", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441" } });
+    voice = () => ["It'll be there by Sept 25, and I'll throw in a 50 dollar credit!"];
+    const r = await say(id, "EG-77441");
+    assert.match(r.messages[0].text, /still moving/);          // plain draft went out instead
+    assert.ok(!/credit/.test(r.messages[0].text));
+    voice = () => "HTTP_500";
+  });
+
+  await check("natural wording: wrong number of messages is discarded", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "unclear" });
+    voice = () => ["one", "two", "three"];
+    const r = await say(id, "blah");
+    assert.match(r.messages[0].text, /doesn't look like an order number/);
+    voice = () => "HTTP_500";
+  });
+
+  await check("natural wording: rewrite outage still returns the plain reply", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441" } });
+    voice = () => "HTTP_500";
+    const r = await say(id, "EG-77441");
+    assert.equal(r.decision.by, "gemini");
+    assert.match(r.messages[0].text, /still moving/);
   });
 
   await check("Gemini outage → falls back to rules, conversation continues", async () => {

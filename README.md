@@ -53,20 +53,24 @@ customer reaches a person. Typing `agent` works from anywhere.
 
 ## How the agent works
 
-**Gemini decides. The app speaks.**
+**Gemini decides. The app holds the facts. Gemini puts them in words.**
 
 Each turn, the server tells Gemini where the conversation is and hands it a short list of
 moves — only the ones allowed from that step. For example, after asking *"have you looked
 around?"*, the only moves on offer are `already_checked`, `will_look`, `escalate_to_agent`,
 and `unclear`. Gemini must pick exactly one (function calling, `mode: "ANY"`).
 
-The app then carries out that move and writes the reply itself. Gemini never writes a
-single word the customer sees.
+The app then carries out that move and writes a draft reply that holds the facts (order
+number, dates, where the package was last scanned, what happens next). A second Gemini call
+rewrites that draft so it answers what the customer actually said, in natural words instead of
+a script. If the rewrite adds or drops a number, date, or order id, changes the number of
+messages, or the call fails, the plain draft is sent instead. Gemini can change how something
+is said, never what is promised.
 
 **Why split it this way.** A customer-service bot that lets a model write freely can be
 talked into promising refunds or inventing policy. Here, the worst a confused or
 manipulated model can do is pick the wrong move from a short list — and even that gets
-checked. Meanwhile the customer still gets the benefit: *"nah it's definitely not out
+checked — or phrase a true draft oddly. Meanwhile the customer still gets the benefit: *"nah it's definitely not out
 there, asked next door too"* is understood as "already checked," which the keyword
 matcher misses.
 
@@ -202,7 +206,7 @@ public/
   engine.js      the conversation flow — shared by browser and server
   config.js      where the agent server lives, if it's hosted separately
 server.js        holds the API key, keeps each conversation's state, runs each turn
-gemini.js        builds the Gemini request and reads back the chosen move
+gemini.js        picks the move, then rewrites the engine's draft reply in natural words
 test.js          23 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
