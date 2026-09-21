@@ -11,8 +11,8 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 // The page gives up on a whole turn after 20s, and a turn makes both calls in a row.
 // Deciding the move matters most (a miss drops to keyword rules); a plain draft is a fine fallback for wording.
-const DECIDE_TIMEOUT_MS = 12000;
-const VOICE_TIMEOUT_MS = 5000;
+const DECIDE_TIMEOUT_MS = 10000;
+const VOICE_TIMEOUT_MS = 8000;
 
 const SYSTEM = `You are the decision layer of TrackBot, a customer service assistant that helps
 customers whose package hasn't arrived. In this step you don't write messages to the customer.
@@ -109,6 +109,8 @@ Rules:
   it offers (for example "file a claim now or keep watching it a few more days?"). Be proactive:
   never end on a bare statement when the draft asks or offers something, and don't turn a
   question into a statement.
+- If there is more than one draft message, the reply reads as one: don't repeat an apology, a greeting or
+  a question across them.
 - Sound warm and conversational. Vary your wording; don't sound scripted. Keep it short: usually
   one to three sentences, plain text, no lists, no markdown, no emoji.
 - Acknowledge what the customer said when it helps (frustration, relief, a joke) before the facts.

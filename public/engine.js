@@ -226,13 +226,15 @@
     return reply(messages, STATES.confirm_escalation.chips(s));
   }
 
+  // A plain re-ask ("Replacement or refund?") is flagged so an offer of a person can replace it,
+  // instead of the customer getting two questions in a row. A specific error is real information, so it stays.
   function miss(s, specific) {
     s.misses += 1;
-    const messages = [err(specific || STATES[s.state].reprompt(s))];
+    const msg = specific ? err(specific) : { ...err(STATES[s.state].reprompt(s)), reprompt: true };
     if (s.misses >= MISS_LIMIT && s.state !== "confirm_escalation")
-      return offerPerson(s, messages, "I'm sorry, I'm having trouble getting this right. " +
+      return offerPerson(s, specific ? [msg] : [], "I'm sorry, I'm having trouble getting this right. " +
         "Would you like me to connect you with a person, or keep trying here?");
-    return reply(messages, STATES[s.state].chips(s));
+    return reply([msg], STATES[s.state].chips(s));
   }
 
   /* ---------- Mood ----------
@@ -244,7 +246,7 @@
     s.upsets = upset ? s.upsets + 1 : 0;
     const canOffer = s.state !== "confirm_escalation" && s.state !== "ended";
     if (upset && s.upsets >= UPSET_LIMIT && canOffer)
-      return offerPerson(s, r.messages, "I can tell this has been frustrating, and I'm sorry. " +
+      return offerPerson(s, r.messages.filter(m => !m.reprompt), "I can tell this has been frustrating, and I'm sorry. " +
         "Would you like me to connect you with a person, or keep going here?");
     // Put the apology in the draft itself, so an upset customer still gets it if Gemini's rewording fails.
     if (upset && r.messages.length) r.messages[0] = { ...r.messages[0], text: "I'm sorry this has been so frustrating. " + r.messages[0].text };

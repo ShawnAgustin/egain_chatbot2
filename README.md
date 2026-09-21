@@ -38,7 +38,7 @@ asking, and switches to Gemini when it answers, unless you turned the switch off
 disabled when no server is configured.
 
 ```bash
-npm test                    # 95 tests; no key or network needed
+npm test                    # 98 tests; no key or network needed
 ```
 
 ---
@@ -115,7 +115,7 @@ matcher misses.
 | Facts in every reply come from the app; Gemini's rewrite is thrown away if it changes a number, date or order id, or drops the follow-up question | Invented promises, or a reply that leaves the customer hanging |
 | Customer text is fenced off as data in the prompt | "Ignore your rules and…" |
 | The upset flag only decides whether to *offer* a person, never which move runs | Anger being used to skip steps |
-| Gemini error or timeout (12s to pick the move, 5s to reword) → keyword matching or the plain draft takes over | A dead chat during an outage |
+| Gemini error or timeout (10s to pick the move, 8s to reword) → keyword matching or the plain draft takes over | A dead chat during an outage |
 | Key stays on the server, sent in a header | Key leaking to the browser or logs |
 | Server serves only `public/` | `.env` being downloadable |
 | Conversation state lives on the server | A client faking which step it's on |
@@ -231,7 +231,8 @@ something reasonable, so the bot suggests why it might not match rather than imp
 got it wrong.
 
 **3 · Three misses in a row, at any step.** The bot still explains what went wrong each time,
-then stops re-asking and offers a person. Choosing "keep going" returns to the same step.
+then stops re-asking and offers a person. The offer replaces the re-ask, so the customer gets one
+message with one question, not two in a row. Choosing "keep going" returns to the same step.
 
 **4 · Two upset messages in a row (agent mode).** One upset message gets empathy and the flow
 continues. A second one right after offers a person. Being annoyed once never triggers a
@@ -268,7 +269,7 @@ public/
 build-orders.js  regenerates public/orders.js from orders.json (npm run build:orders)
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          95 tests: every path, every error, every guardrail
+test.js          98 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design

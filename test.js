@@ -59,6 +59,22 @@ function talk(...inputs) {
     assert.match(r.messages[0].text, /can't find/);          // specific error not swallowed
     assert.equal(s.state, "confirm_escalation");
   });
+  await check("the offer of a person is a single message after plain re-asks (no double reply)", () => {
+    const { r, s } = talk("what", "huh", "hmm");
+    assert.equal(s.state, "confirm_escalation"); assert.equal(r.messages.length, 1);
+    assert.equal(r.messages[0].kind, "bot"); assert.match(r.messages[0].text, /connect you with a person/);
+    assert.ok(!/Have you|Replacement|order number/.test(r.messages[0].text), "no extra question alongside the offer");
+  });
+  await check("a specific error is kept alongside the offer, because it is real information", () => {
+    const { r } = talk("what", "huh", "EG-99999");
+    assert.equal(r.messages.length, 2); assert.match(r.messages[0].text, /can't find a package under EG-99999/);
+  });
+  await check("upset twice on real content keeps the content and adds the offer", () => {
+    const s = engine.createSession();
+    engine.noteMood(s, true, engine.apply(s, "unclear"));
+    const r = engine.noteMood(s, true, engine.apply(s, "lookup_order", { order_id: "EG-10293" }));
+    assert.equal(r.messages.length, 2); assert.match(r.messages[0].text, /EG-10293 was due Sept 14/);
+  });
   await check("keep going after escalation offer resumes the same step", () => {
     const { s } = talk("what", "huh", "hmm", "No, let's keep going");
     assert.equal(s.state, "ask_order"); assert.equal(s.misses, 0);
@@ -94,9 +110,9 @@ function talk(...inputs) {
     const s = engine.createSession();
     engine.noteMood(s, true, engine.apply(s, "unclear"));
     const r = engine.noteMood(s, true, engine.apply(s, "unclear"));
-    assert.equal(r.messages.length, 2);
+    assert.equal(r.messages.length, 1, "the offer replaces the plain re-ask instead of following it");
+    assert.match(r.messages[0].text, /frustrating, and I'm sorry/);
     assert.ok(!/sorry this has been so frustrating/.test(r.messages[0].text));
-    assert.match(r.messages[1].text, /frustrating, and I'm sorry/);
   });
   await check("mood: two upset messages in a row offer a person, and keep going resumes", () => {
     const s = engine.createSession();
@@ -566,8 +582,8 @@ function talk(...inputs) {
     assert.match(r1.messages[0].text, /sorry this has been so frustrating/);   // the rewrite is off in this test: apology is in the draft
     assert.match(r1.decision.voiceFallback, /HTTP 500/);                          // and the decision says why the reply is plain
     const r2 = await say(id, "SERIOUSLY??");
-    assert.equal(r2.messages.length, 2);
-    assert.match(r2.messages[1].text, /frustrating/);
+    assert.equal(r2.messages.length, 1);                       // one bubble: the offer, not a re-ask plus an offer
+    assert.match(r2.messages[0].text, /frustrating/);
     assert.deepEqual(r2.chips, ["Yes, get me an agent", "No, let's keep going"]);
   });
 
