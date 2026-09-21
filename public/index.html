@@ -108,7 +108,7 @@ function addDecision(d) {
   el.className = "decision";
   const action = document.createElement("b");
   action.textContent = d.action;
-  el.append("→ ", action, ` · ${d.by}` + (d.rejected ? ` (rejected ${d.rejected})` : ""));
+  el.append("→ ", action, ` · ${d.by}` + (d.rejected ? ` (rejected ${d.rejected})` : "") + (d.upset ? " · upset" : ""));
   thread.appendChild(el);
 }
 

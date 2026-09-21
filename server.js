@@ -57,6 +57,7 @@ function rateLimit(maxPerMinute) {
   };
 }
 const CHAT_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN) || 30;
+const SESSION_LIMIT = Number(process.env.SESSION_LIMIT_PER_MIN) || 10;
 
 // Serve ONLY the public folder. Serving the project root would expose .env.
 app.use(express.static(path.join(__dirname, "public")));
@@ -83,7 +84,7 @@ app.get("/api/status", (req, res) => {
 });
 
 /* ---- Start a conversation ---- */
-app.post("/api/session", rateLimit(10), (req, res) => {
+app.post("/api/session", rateLimit(SESSION_LIMIT), (req, res) => {
   const id = crypto.randomUUID();
   const rec = { s: engine.createSession(), transcript: [], touched: Date.now() };
   sessions.set(id, rec);
@@ -126,10 +127,11 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
   // 3. Guardrail: never execute a move that isn't legal from this step.
   if (!allowed.includes(decision.action)) {
     console.warn(`[guard] rejected "${decision.action}" from state ${rec.s.state}`);
-    decision = { action: "unclear", by: decision.by, rejected: decision.action };
+    decision = { action: "unclear", by: decision.by, rejected: decision.action, upset: decision.upset };
   }
 
-  const reply = engine.apply(rec.s, decision.action, decision.args);
+  let reply = engine.apply(rec.s, decision.action, decision.args);
+  if (decision.by === "gemini") reply = engine.noteMood(rec.s, decision.upset === true, reply);
 
   // 4. The engine's reply holds the facts. Let Gemini put it in natural words;
   //    if that fails or drifts from the facts, the plain draft goes out instead.
@@ -146,7 +148,7 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
   remember(rec, "Customer", text);
   reply.messages.forEach(m => remember(rec, "Assistant", m.text));
 
-  res.json({ ...reply, decision: { action: decision.action, by: decision.by, rejected: decision.rejected } });
+  res.json({ ...reply, decision: { action: decision.action, by: decision.by, rejected: decision.rejected, upset: decision.upset === true } });
 });
 
 if (require.main === module) {

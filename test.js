@@ -77,6 +77,34 @@ function talk(...inputs) {
   await check("'speak to someone' still is", () => {
     assert.equal(talk("EG-58120", "can I speak to someone please").s.state, "ended");
   });
+  await check("mood: one upset message does not offer a person", () => {
+    const s = engine.createSession();
+    const r = engine.noteMood(s, true, engine.apply(s, "lookup_order", { order_id: "EG-10293" }));
+    assert.equal(s.state, "stalled"); assert.equal(r.messages.length, 1);
+  });
+  await check("mood: two upset messages in a row offer a person, and keep going resumes", () => {
+    const s = engine.createSession();
+    engine.noteMood(s, true, engine.apply(s, "lookup_order", { order_id: "EG-10293" }));
+    const r = engine.noteMood(s, true, engine.apply(s, "unclear"));
+    assert.equal(s.state, "confirm_escalation");
+    assert.match(r.messages.at(-1).text, /frustrating/);
+    engine.apply(s, "keep_going");
+    assert.equal(s.state, "stalled"); assert.equal(s.upsets, 0);
+  });
+  await check("mood: a calm message in between resets the count", () => {
+    const s = engine.createSession(), r = () => ({ messages: [], chips: [] });
+    engine.noteMood(s, true, r());
+    engine.noteMood(s, false, r());
+    engine.noteMood(s, true, r());
+    assert.equal(s.state, "ask_order");
+  });
+  await check("mood: no offer once the chat has ended", () => {
+    const s = engine.createSession();
+    engine.apply(s, "escalate_to_agent");
+    engine.noteMood(s, true, engine.apply(s, "unclear"));
+    engine.noteMood(s, true, engine.apply(s, "unclear"));
+    assert.equal(s.state, "ended");
+  });
   await check("engine refuses an illegal move even if asked directly", () => {
     const s = engine.createSession();
     const r = engine.apply(s, "issue_refund");                 // no order, wrong step
@@ -88,6 +116,7 @@ function talk(...inputs) {
 
   process.env.GEMINI_API_KEY = "test-key";
   process.env.ALLOWED_ORIGINS = "https://shawn.github.io";
+  process.env.SESSION_LIMIT_PER_MIN = "30";
   let fake = () => ({ name: "unclear" });                      // swapped per test
   let voice = () => "HTTP_500";                                // the rewrite call; off unless a test turns it on
   let lastGeminiRequest = null;
@@ -221,6 +250,45 @@ function talk(...inputs) {
     assert.match(r.messages[0].text, /still moving/);
   });
 
+  await check("mood: Gemini is asked to flag upset customers on every move", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "unclear" });
+    await say(id, "hello");
+    for (const f of lastDecisionRequest.body.tools[0].functionDeclarations) {
+      assert.equal(f.parameters.properties.customer_upset.type, "boolean", f.name);
+      assert.ok(!f.parameters.required.includes("customer_upset"), f.name);
+    }
+  });
+
+  await check("mood: two upset turns in a row → the reply offers a person", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "unclear", args: { customer_upset: true } });
+    const r1 = await say(id, "this is ridiculous");
+    assert.equal(r1.decision.upset, true); assert.equal(r1.messages.length, 1);
+    const r2 = await say(id, "SERIOUSLY??");
+    assert.equal(r2.messages.length, 2);
+    assert.match(r2.messages[1].text, /frustrating/);
+    assert.deepEqual(r2.chips, ["Yes, get me an agent", "No, let's keep going"]);
+  });
+
+  await check("mood: a polite turn in between resets the count", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "unclear", args: { customer_upset: true } });
+    await say(id, "ugh");
+    fake = () => ({ name: "unclear", args: { customer_upset: false } });
+    await say(id, "sorry, where do I find it?");
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441", customer_upset: true } });
+    const r = await say(id, "ugh, fine, EG-77441");
+    assert.equal(r.messages.length, 1);                        // without the reset this would be a second upset turn
+  });
+
+  await check("mood: the flag never leaks into the move's arguments", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441", customer_upset: true } });
+    const r = await say(id, "just look up EG-77441 already");
+    assert.match(r.messages[0].text, /still moving/);
+  });
+
   await check("Gemini outage → falls back to rules, conversation continues", async () => {
     const id = await newChat();
     fake = () => "HTTP_500";
@@ -255,7 +323,7 @@ function talk(...inputs) {
 
   await check("rate limit: a flood of new sessions gets 429", async () => {
     let limited = false;
-    for (let i = 0; i < 15 && !limited; i++)
+    for (let i = 0; i < 40 && !limited; i++)
       limited = (await realFetch(base + "/api/session", { method: "POST" })).status === 429;
     assert.ok(limited, "never hit the limit");
   });

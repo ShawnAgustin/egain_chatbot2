@@ -7,7 +7,7 @@ The conversation follows a fixed, designed flow. A **Gemini agent** decides whic
 that flow the customer is asking for on each turn — so people can talk the way they
 actually talk — but it can only ever choose moves that are drawn on the flowchart.
 
-**Live demo:** https://YOUR-APP.onrender.com — hosted free, so the first visit can take up to
+**Live demo:** https://trackbot-3w10.onrender.com — hosted free, so the first visit can take up to
 a minute while the server wakes up.
 
 ---
@@ -30,7 +30,7 @@ in the chat header shows which mode you're in. With no key, the server still run
 rule-based mode.
 
 ```bash
-npm test                    # 23 tests; no key or network needed
+npm test                    # 39 tests; no key or network needed
 ```
 
 ---
@@ -67,6 +67,12 @@ a script. If the rewrite adds or drops a number, date, or order id, changes the 
 messages, or the call fails, the plain draft is sent instead. Gemini can change how something
 is said, never what is promised.
 
+**Noticing when a customer is upset.** Along with the move, Gemini also flags whether the
+newest message sounds angry or exasperated. One upset message doesn't hand the customer off:
+the reply acknowledges how they feel and keeps helping. Two in a row means the flow isn't
+working for them, so the bot offers a person (or to keep going here). A calm message in
+between resets the count. This runs in agent mode only; keyword mode has no mood detection.
+
 **Why split it this way.** A customer-service bot that lets a model write freely can be
 talked into promising refunds or inventing policy. Here, the worst a confused or
 manipulated model can do is pick the wrong move from a short list — and even that gets
@@ -81,8 +87,9 @@ matcher misses.
 | Gemini is only offered the current step's moves | Skipping ahead, e.g. straight to a refund |
 | The server re-checks the chosen move anyway | A model that ignores its instructions |
 | Order numbers from the model are validated and looked up | Hallucinated order numbers |
-| All customer-facing text comes from the app | Invented promises or policy |
+| Facts in every reply come from the app; Gemini's rewrite is thrown away if it changes a number, date or order id | Invented promises or policy |
 | Customer text is fenced off as data in the prompt | "Ignore your rules and…" |
+| The upset flag only decides whether to *offer* a person, never which move runs | Anger being used to skip steps |
 | Gemini error or timeout (8s) → keyword matching takes over | A dead chat during an outage |
 | Key stays on the server, sent in a header | Key leaking to the browser or logs |
 | Server serves only `public/` | `.env` being downloadable |
@@ -190,9 +197,12 @@ got it wrong.
 
 **3 · Three misses in a row, at any step.** The bot still explains what went wrong each time,
 then stops re-asking and offers a person. Choosing "keep going" returns to the same step.
-Being annoyed alone doesn't trigger a handoff; the customer has to ask for a person.
 
-**4 · The agent itself fails.** Timeouts, API errors, or an illegal move from the model
+**4 · Two upset messages in a row (agent mode).** One upset message gets empathy and the flow
+continues. A second one right after offers a person. Being annoyed once never triggers a
+handoff by itself; the customer can always ask for a person directly.
+
+**5 · The agent itself fails.** Timeouts, API errors, or an illegal move from the model
 all fall back to keyword matching or a re-prompt. The customer never sees a crash.
 
 ![Error handling](screenshots/02-error-handling.png)
@@ -208,7 +218,7 @@ public/
   config.js      where the agent server lives, if it's hosted separately
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          23 tests: every path, every error, every guardrail
+test.js          39 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design
@@ -220,17 +230,20 @@ the same code executes the move.
 
 Each turn on the server:
 1. Browser sends only the customer's text.
-2. Server asks Gemini to pick one of the allowed moves.
+2. Server asks Gemini to pick one of the allowed moves and to flag whether the customer sounds upset.
 3. If Gemini fails, keyword matching picks instead.
 4. Server checks the move is legal from this step.
-5. Engine carries it out and writes the reply.
+5. Engine carries it out and writes a draft reply that holds the facts.
+6. Gemini rewrites the draft in natural words; if that fails or changes a fact, the plain
+   draft is sent instead.
 
 ---
 
 ## Screenshots
 
-These are from rule-based mode. The line under each customer message shows which move was
-chosen and by what — in agent mode it reads `· gemini`.
+These are from agent mode (Gemini). The line under each customer message shows which move
+was chosen, by what, and whether Gemini flagged the customer as upset. The greeting is fixed;
+every reply after it is worded by Gemini from the app's facts.
 
 **Tracking says delivered, customer says otherwise → claim**
 
@@ -239,6 +252,10 @@ chosen and by what — in agent mode it reads `· gemini`.
 **In transit and not yet due → reassure, don't open a claim**
 
 ![In transit](screenshots/03-in-transit-not-lost.png)
+
+**Customer gets upset twice in a row → acknowledge, then offer a person**
+
+![Upset customer](screenshots/04-upset-handoff.png)
 
 ---
 
@@ -254,6 +271,7 @@ chosen and by what — in agent mode it reads `· gemini`.
 | `agent` | Reach a person, from any step |
 | `my order is eg 58120` | Agent mode pulls the number out of a sentence |
 | `nah not out there, asked next door` | Agent mode understands; keyword mode doesn't |
+| `EG-10293`, then `this is so annoying`, then `SERIOUSLY?? this is ridiculous` | Two upset messages in a row → offers a person |
 
 ---
 

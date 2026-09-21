@@ -97,7 +97,7 @@
 
   /* ---------- Session ---------- */
   function createSession() {
-    return { state: "ask_order", order: null, misses: 0, resumeState: null };
+    return { state: "ask_order", order: null, misses: 0, upsets: 0, resumeState: null };
   }
 
   function greeting() {
@@ -130,15 +130,37 @@
      Always say what went wrong first. After MISS_LIMIT misses in a
      row, stop asking the same question and offer a person instead. */
   const MISS_LIMIT = 3;
+  const UPSET_LIMIT = 2;
+
+  // Park the current step and ask whether to bring in a person.
+  function offerPerson(s, messages, text) {
+    s.resumeState = s.state;
+    s.state = "confirm_escalation";
+    s.misses = 0;
+    s.upsets = 0;
+    messages.push(bot(text));
+    return reply(messages, STATES.confirm_escalation.chips(s));
+  }
+
   function miss(s, specific) {
     s.misses += 1;
     const messages = [err(specific || STATES[s.state].reprompt(s))];
-    if (s.misses >= MISS_LIMIT && s.state !== "confirm_escalation") {
-      s.resumeState = s.state;
-      s.state = "confirm_escalation";
-      messages.push(bot("I'm sorry, I'm having trouble getting this right. Would you like me to connect you with a person, or keep trying here?"));
-    }
+    if (s.misses >= MISS_LIMIT && s.state !== "confirm_escalation")
+      return offerPerson(s, messages, "I'm sorry, I'm having trouble getting this right. " +
+        "Would you like me to connect you with a person, or keep trying here?");
     return reply(messages, STATES[s.state].chips(s));
+  }
+
+  /* ---------- Mood ----------
+     The decision maker says whether the customer sounded upset on this turn.
+     One upset message gets empathy from the reply wording. Upset messages
+     back to back also offer a person, since the flow clearly isn't helping.
+     Returns the reply, possibly with the offer added.                     */
+  function noteMood(s, upset, r) {
+    s.upsets = upset ? s.upsets + 1 : 0;
+    if (s.upsets < UPSET_LIMIT || s.state === "confirm_escalation" || s.state === "ended") return r;
+    return offerPerson(s, r.messages, "I can tell this has been frustrating, and I'm sorry. " +
+      "Would you like me to connect you with a person, or keep going here?");
   }
 
   /* ---------- Execute a decided action ----------
@@ -261,5 +283,5 @@
     return null;
   }
 
-  return { ORDERS, ACTIONS, STATES, createSession, greeting, allowedActions, apply, ruleIntent, normalizeOrderId };
+  return { ORDERS, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, ruleIntent, normalizeOrderId };
 });
