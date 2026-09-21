@@ -105,6 +105,56 @@ function talk(...inputs) {
     engine.noteMood(s, true, engine.apply(s, "unclear"));
     assert.equal(s.state, "ended");
   });
+  await check("a different order number mid-conversation asks before switching", () => {
+    const s = engine.createSession();
+    engine.apply(s, "lookup_order", { order_id: "EG-10293" });
+    const r = engine.apply(s, "lookup_order", { order_id: "EG-77441" });
+    assert.equal(s.state, "confirm_switch"); assert.equal(s.order, "EG-10293");     // nothing dropped yet
+    assert.match(r.messages[0].text, /still working on EG-10293/);
+    assert.match(r.messages[0].text, /check EG-77441 instead, or stay with EG-10293\?/);
+    assert.deepEqual(r.chips, ["Yes, check EG-77441", "No, stay with EG-10293"]);
+  });
+  await check("confirming the switch looks up the new order", () => {
+    const s = engine.createSession();
+    engine.apply(s, "lookup_order", { order_id: "EG-10293" });
+    engine.apply(s, "lookup_order", { order_id: "EG-77441" });
+    const r = engine.apply(s, "switch_order");
+    assert.equal(s.state, "in_transit"); assert.equal(s.order, "EG-77441");
+    assert.match(r.messages[0].text, /still moving/);
+  });
+  await check("declining the switch returns to the same step with the same order", () => {
+    const s = engine.createSession();
+    engine.apply(s, "lookup_order", { order_id: "EG-10293" });
+    engine.apply(s, "lookup_order", { order_id: "EG-77441" });
+    const r = engine.apply(s, "stay_on_order");
+    assert.equal(s.state, "stalled"); assert.equal(s.order, "EG-10293");
+    assert.match(r.messages[0].text, /stay with EG-10293/); assert.match(r.messages[0].text, /file the claim now/);
+  });
+  await check("no confirmation needed when nothing is in progress, or for the same order", () => {
+    const fresh = engine.createSession();
+    engine.apply(fresh, "lookup_order", { order_id: "EG-10293" });          // first lookup: straight through
+    assert.equal(fresh.state, "stalled");
+    engine.apply(fresh, "lookup_order", { order_id: "EG-10293" });          // same order again
+    assert.equal(fresh.state, "stalled");
+    const done = engine.createSession();
+    engine.apply(done, "lookup_order", { order_id: "EG-77441" });
+    engine.apply(done, "notify_on_arrival");                                // chat wrapped up
+    engine.apply(done, "lookup_order", { order_id: "EG-58120" });
+    assert.equal(done.state, "looked_around"); assert.equal(done.order, "EG-58120");
+  });
+  await check("a mistyped or unknown order number mid-conversation is an error, not a switch prompt", () => {
+    const s = engine.createSession();
+    engine.apply(s, "lookup_order", { order_id: "EG-10293" });
+    const r = engine.apply(s, "lookup_order", { order_id: "EG-99999" });
+    assert.equal(r.messages[0].kind, "err"); assert.equal(s.state, "stalled");
+  });
+  await check("keyword mode: a new order number asks, then yes switches and no stays", () => {
+    const yes = talk("EG-10293", "EG-77441", "yes please");
+    assert.equal(yes.s.state, "in_transit"); assert.equal(yes.s.order, "EG-77441");
+    const no = talk("EG-10293", "EG-77441", "no, stay with it");
+    assert.equal(no.s.state, "stalled"); assert.equal(no.s.order, "EG-10293");
+    assert.equal(talk("EG-10293", "EG-77441").s.state, "confirm_switch");
+  });
   await check("engine refuses an illegal move even if asked directly", () => {
     const s = engine.createSession();
     const r = engine.apply(s, "issue_refund");                 // no order, wrong step
@@ -274,6 +324,24 @@ function talk(...inputs) {
     assert.deepEqual(Object.keys(data), Object.keys(orders));
     assert.equal(data["EG-11004"].status, "returned");
     assert.equal(r.headers.get("access-control-allow-origin"), "https://shawn.github.io");
+  });
+
+  await check("Gemini: a new order mid-conversation asks to switch, and the answer is a move too", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-10293" } });
+    await say(id, "EG-10293");
+    fake = () => ({ name: "lookup_order", args: { order_id: "EG-78060" } });
+    const r = await say(id, "EG-78060");
+    const offered = lastDecisionRequest.body.tools[0].functionDeclarations.map(f => f.name);
+    assert.ok(offered.includes("lookup_order") && offered.includes("file_claim"), offered.join(","));
+    assert.equal(r.decision.rejected, undefined);
+    assert.match(r.messages[0].text, /still working on EG-10293/);
+    assert.match(r.messages[0].text, /check EG-78060 instead/);
+    fake = () => ({ name: "switch_order" });
+    const r2 = await say(id, "yes go ahead");
+    const offered2 = lastDecisionRequest.body.tools[0].functionDeclarations.map(f => f.name).sort();
+    assert.deepEqual(offered2, ["escalate_to_agent", "lookup_order", "stay_on_order", "switch_order", "unclear"]);
+    assert.match(r2.messages[0].text, /hasn't actually shipped yet/);
   });
 
   await check("API key travels in a header, never the URL", async () => {

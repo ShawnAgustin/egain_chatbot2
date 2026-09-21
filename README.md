@@ -30,7 +30,7 @@ in the chat header shows which mode you're in. With no key, the server still run
 rule-based mode.
 
 ```bash
-npm test                    # 70 tests; no key or network needed
+npm test                    # 77 tests; no key or network needed
 ```
 
 ---
@@ -57,8 +57,9 @@ customer reaches a person. Typing `agent` works from anywhere.
 
 Each turn, the server tells Gemini where the conversation is and hands it a short list of
 moves — only the ones allowed from that step. For example, after asking *"have you looked
-around?"*, the only moves on offer are `already_checked`, `will_look`, `escalate_to_agent`,
-and `unclear`. Gemini must pick exactly one (function calling, `mode: "ANY"`).
+around?"*, the moves on offer are `already_checked`, `will_look`, `lookup_order` (a customer
+can switch to a different order at any point), `escalate_to_agent`, and `unclear`. Gemini must
+pick exactly one (function calling, `mode: "ANY"`).
 
 The app then carries out that move and writes a draft reply that holds the facts (order
 number, dates, where the package was last scanned, what happens next). A second Gemini call
@@ -71,6 +72,12 @@ is said, never what is promised.
 the options (for example, "file a claim now, or keep watching it for a few more days?"), or,
 once a chat is wrapped up, by saying how to start another lookup. Gemini's rewrite is thrown
 away if it turns that question into a bare statement.
+
+**Switching orders mid-chat.** A customer can send a different order number at any point. If
+another order is still in progress, the bot doesn't silently drop it: it says it's still
+working on the first one and asks whether to check the new one instead or stay put. "Yes"
+looks up the new order; "no" returns to the same step. The same applies when a row is clicked
+in the **view all orders** panel.
 
 **Noticing when a customer is upset.** Along with the move, Gemini also flags whether the
 newest message sounds angry or exasperated. One upset message doesn't hand the customer off:
@@ -89,7 +96,7 @@ matcher misses.
 
 | Guardrail | What it prevents |
 |---|---|
-| Gemini is only offered the current step's moves | Skipping ahead, e.g. straight to a refund |
+| Gemini is only offered the current step's moves, plus order lookup, which is allowed anywhere | Skipping ahead, e.g. straight to a refund |
 | The server re-checks the chosen move anyway | A model that ignores its instructions |
 | Order numbers from the model are validated and looked up | Hallucinated order numbers |
 | Facts in every reply come from the app; Gemini's rewrite is thrown away if it changes a number, date or order id, or drops the follow-up question | Invented promises, or a reply that leaves the customer hanging |
@@ -224,7 +231,7 @@ public/
   config.js      where the agent server lives, if it's hosted separately
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          70 tests: every path, every error, every guardrail
+test.js          77 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design

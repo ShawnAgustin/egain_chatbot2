@@ -99,7 +99,7 @@
      exactly what the model reads when deciding which to call.     */
   const ACTIONS = {
     lookup_order: {
-      description: "The customer gave an order number to look up.",
+      description: "The customer gave an order number to look up. This is allowed at any step, including switching to a different order in the middle of a conversation.",
       params: { order_id: "The order number exactly as the customer gave it, e.g. EG-58120. Never invent or guess letters or digits." }
     },
     already_checked:   { description: "The customer says they already looked around the delivery spot, with neighbors, or with household members, and the package is not there." },
@@ -113,6 +113,8 @@
     send_replacement:  { description: "The customer wants a replacement shipped." },
     issue_refund:      { description: "The customer wants a refund." },
     keep_going:        { description: "The customer wants to keep going with the assistant rather than talk to a person." },
+    switch_order:      { description: "The customer confirms they want to check the new order instead of the one already in progress." },
+    stay_on_order:     { description: "The customer wants to stay with the order already in progress instead of switching to the new one." },
     escalate_to_agent: { description: "The customer explicitly asks for a human, agent or person, or says they want to stop using the assistant. Frustration alone does not count." },
     unclear:           { description: "The customer's message does not clearly match any other action. Use this instead of guessing." }
   };
@@ -159,6 +161,11 @@
       reprompt: () => "Should I connect you with a person, or keep going here?",
       chips: () => ["Yes, get me an agent", "No, let's keep going"]
     },
+    confirm_switch: {
+      actions: ["switch_order", "stay_on_order"],
+      reprompt: s => `Should I check ${s.pendingOrder} instead, or stay with ${s.order}?`,
+      chips: s => [`Yes, check ${s.pendingOrder}`, `No, stay with ${s.order}`]
+    },
     ended: {
       actions: ["new_lookup"],
       reprompt: () => "We're all wrapped up here — want to look up another package?",
@@ -168,7 +175,7 @@
 
   /* ---------- Session ---------- */
   function createSession() {
-    return { state: "ask_order", order: null, misses: 0, upsets: 0, resumeState: null };
+    return { state: "ask_order", order: null, misses: 0, upsets: 0, resumeState: null, pendingOrder: null, switchFrom: null };
   }
 
   function greeting() {
@@ -176,8 +183,9 @@
                       "What's the order number?")], featuredOrders());
   }
 
+  // Looking up an order is always allowed: customers paste a different order number mid-chat.
   function allowedActions(s) {
-    return [...STATES[s.state].actions, "escalate_to_agent", "unclear"];
+    return [...new Set([...STATES[s.state].actions, "lookup_order", "escalate_to_agent", "unclear"])];
   }
 
   /* ---------- Helpers ---------- */
@@ -249,6 +257,19 @@
       case "unclear":
         return miss(s);
 
+      case "switch_order": {
+        const id = s.pendingOrder;
+        if (!id) return miss(s);
+        s.pendingOrder = null; s.switchFrom = null; s.order = null;
+        return apply(s, "lookup_order", { order_id: id });
+      }
+
+      case "stay_on_order": {
+        const back = s.switchFrom || "ask_order";
+        s.pendingOrder = null; s.switchFrom = null;
+        return go(s, back, `Okay, we'll stay with ${s.order}. ` + (STATES[back].ask || STATES[back].reprompt)(s));
+      }
+
       case "keep_going": {
         const back = s.resumeState || "ask_order";
         s.resumeState = null;
@@ -265,6 +286,14 @@
         const route = ROUTES[rec.status];
         if (!route) return miss(s,                                  // error case 3: record we can't interpret
           `I found ${id}, but I can't read its tracking status right now. Want to try another number?`);
+
+        // Already working on a different order? Say so and ask before dropping it.
+        if (s.order && s.order !== id && !["ask_order", "ended", "confirm_switch"].includes(s.state)) {
+          s.pendingOrder = id;
+          s.switchFrom = s.state;
+          return go(s, "confirm_switch", `We're still working on ${s.order} right now. ` +
+            `Would you like me to check ${id} instead, or stay with ${s.order}?`);
+        }
         s.order = id;
         return go(s, ...route(id, rec));
       }
@@ -304,6 +333,12 @@
 
   function ruleIntent(s, text) {
     const t = text.trim();
+    if (normalizeOrderId(t)) return { action: "lookup_order", args: { order_id: t } };
+    if (s.state === "confirm_switch") {
+      if (/^(yes|yeah|yep|sure|ok)|switch|instead/i.test(t)) return { action: "switch_order" };
+      if (/^no|stay|keep|continue|current/i.test(t)) return { action: "stay_on_order" };
+      return null;
+    }
     if (s.state === "confirm_escalation") {
       if (/^yes|agent|human|person/i.test(t)) return { action: "escalate_to_agent" };
       if (/^no|keep going|continue/i.test(t)) return { action: "keep_going" };
