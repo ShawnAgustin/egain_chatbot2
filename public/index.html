@@ -110,8 +110,12 @@
   .odet{font:11.5px "Courier New",monospace; color:var(--muted); overflow-wrap:anywhere}
 
   .chip-login{border-style:dashed}
-  .acct-orders{align-self:flex-start; max-width:92%; margin-top:2px; border:1px solid var(--line); border-radius:14px;
-              overflow:hidden; background:var(--panel); animation:pop .16s ease-out}
+  /* flex-shrink:0 matters here: #thread is a flex column, and this card sets overflow:hidden
+     (for the rounded corners) — which per spec makes a flex item's automatic min-height 0
+     instead of content-based, so without this the flex algorithm was free to squash the
+     whole card down to fit 430px instead of leaving #thread to scroll past it. */
+  .acct-orders{align-self:flex-start; flex-shrink:0; max-width:92%; margin-top:2px; border:1px solid var(--line);
+              border-radius:14px; overflow:hidden; background:var(--panel); animation:pop .16s ease-out}
   .acct-orders-head{padding:8px 14px; background:var(--bot); color:var(--muted); font-size:12px; border-bottom:1px solid var(--line)}
   .acct-orders-list{max-height:280px; overflow-y:auto}
   @media (prefers-reduced-motion:reduce){.acct-orders{animation:none}}
@@ -172,7 +176,7 @@
 <dialog id="loginModal">
   <div class="modal-head">Sign in to find your order</div>
   <form class="modal-body" id="loginForm">
-    <p>Demo account — try <code>alex@example.com</code> / <code>demo1234</code>.</p>
+    <p>Demo account — try <code>morgan@example.com</code> / <code>demo1234</code>.</p>
     <div class="modal-err" id="loginErr" hidden></div>
     <div class="field"><label for="loginEmail">Email</label>
       <input id="loginEmail" type="email" autocomplete="username" required></div>
