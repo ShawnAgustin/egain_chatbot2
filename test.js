@@ -47,12 +47,16 @@ function talk(...inputs) {
   await check("loose order format 'eg 58120' still resolves", () => {
     assert.equal(talk("eg 58120").s.state, "looked_around");
   });
-  await check("error 1: not an order number", () => {
+  await check("error 1: not an order number, and offers sign-in as another way in", () => {
     const { r } = talk("where is my stuff");
     assert.equal(r.messages[0].kind, "err"); assert.match(r.messages[0].text, /doesn't look like an order number/);
+    assert.equal(r.offerLogin, true);
   });
-  await check("error 2: valid shape, no record", () => {
-    assert.match(talk("EG-99999").said, /can't find a package under EG-99999/);
+  await check("error 2: valid shape, no record, and offers sign-in too", () => {
+    const s = engine.createSession();
+    const r = engine.apply(s, "lookup_order", { order_id: "EG-99999" });
+    assert.match(r.messages[0].text, /can't find a package under EG-99999/);
+    assert.equal(r.offerLogin, true);
   });
   await check("error 3: three misses → still explains, then offers a person", () => {
     const { s, r } = talk("what", "huh", "EG-99999");
@@ -396,7 +400,7 @@ function talk(...inputs) {
 
   await check("the greeting has no order-number chips, since sign-in is now how customers find one", () => {
     assert.deepEqual(engine.greeting().chips, []);
-    assert.deepEqual(engine.STATES.ask_order.chips(), ["agent"]);
+    assert.deepEqual(engine.STATES.ask_order.chips(), ["Talk to a person"]);
   });
 
   await check("an order with a status the engine can't read gets an error, not a crash", () => {

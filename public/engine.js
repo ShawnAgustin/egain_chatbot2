@@ -116,7 +116,7 @@
       ask: () => "What's the order number?",
       reprompt: () => "That doesn't look like an order number. They're two letters, a dash, then " +
                       "4–6 digits — like EG-58120. Mind checking your confirmation email?",
-      chips: () => ["agent"]
+      chips: () => ["Talk to a person"]
     },
     looked_around: {
       actions: ["already_checked", "will_look"],
@@ -131,12 +131,12 @@
     in_transit: {
       actions: ["notify_on_arrival", "new_lookup"],
       reprompt: () => "I can watch it for you, look up a different order, or get you an agent.",
-      chips: () => ["Notify me when it arrives", "Start a new lookup", "agent"]
+      chips: () => ["Notify me when it arrives", "Start a new lookup", "Talk to a person"]
     },
     stalled: {
       actions: ["file_claim", "wait_longer"],
       reprompt: () => "I can file the claim now, keep watching it a few more days, or get you an agent.",
-      chips: () => ["File a claim", "Give it a few more days", "agent"]
+      chips: () => ["File a claim", "Give it a few more days", "Talk to a person"]
     },
     claim_type: {
       actions: ["send_replacement", "issue_refund"],
@@ -279,7 +279,13 @@
      action is legal from the current state before doing anything.   */
   function apply(s, action, args) {
     args = args || {};
-    if (!allowedActions(s).includes(action)) return miss(s);
+    // A miss while we're specifically asking for the order number means the customer hasn't
+    // given us one we can use — offer sign-in as another way in, on top of whatever miss()
+    // already says (a specific "not found" message, or the generic reprompt).
+    const wasAskingForOrder = s.state === "ask_order";
+    const missHere = specific => { const r = miss(s, specific); if (wasAskingForOrder) r.offerLogin = true; return r; };
+
+    if (!allowedActions(s).includes(action)) return missHere();
 
     switch (action) {
       case "restart_chat": {
@@ -293,7 +299,7 @@
           (s.order ? `: order ${s.order}, reported missing.` : "."));
 
       case "unclear":
-        return miss(s);
+        return missHere();
 
       case "switch_order": {
         const id = s.pendingOrder;
@@ -316,9 +322,9 @@
 
       case "lookup_order": {
         const id = normalizeOrderId(args.order_id);
-        if (!id) return miss(s);                                    // error case 1: not an order number
+        if (!id) return missHere();                                  // error case 1: not an order number
         const rec = ORDERS[id];
-        if (!rec) return miss(s,                                    // error case 2: valid shape, no record
+        if (!rec) return missHere(                                   // error case 2: valid shape, no record
           `I can't find a package under ${id}. It may be mistyped, or placed under a ` +
           `different account or email. Want to try another number?`);
         const route = ROUTES[rec.status];
