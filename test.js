@@ -118,6 +118,46 @@ function talk(...inputs) {
     assert.match(r.messages[0].text, /frustrating, and I'm sorry/);
     assert.ok(!/sorry this has been so frustrating/.test(r.messages[0].text));
   });
+  await check("expletives: one strike escalates immediately, not two", () => {
+    const s = engine.createSession();
+    const r = engine.checkExpletive(s, "this is fucking ridiculous", engine.apply(s, "unclear"));
+    assert.equal(s.state, "confirm_escalation");
+    assert.equal(r.messages.length, 1, "the offer replaces the plain re-ask instead of following it");
+    assert.match(r.messages[0].text, /bring in a person right now/);
+  });
+  await check("expletives: real content from this turn is kept, not dropped", () => {
+    const s = engine.createSession();
+    const r = engine.checkExpletive(s, "wtf, EG-10293", engine.apply(s, "lookup_order", { order_id: "EG-10293" }));
+    assert.equal(s.state, "confirm_escalation");
+    assert.equal(r.messages.length, 2);
+    assert.match(r.messages[0].text, /EG-10293 was due Sept 14/);
+    assert.match(r.messages[1].text, /bring in a person right now/);
+  });
+  await check("expletives: mild frustration ('damn', 'crap') is left alone, not treated as profanity", () => {
+    const s = engine.createSession();
+    for (const t of ["damn it, where is this", "this is such crap", "im so pissed off"])
+      assert.equal(engine.hasExpletive(t), false, t);
+  });
+  await check("expletives: word-bounded, so it doesn't fire on 'assassin', 'class', 'grass'", () => {
+    for (const t of ["the assassin movie was great", "i took a class today", "touched the grass", "classy place"])
+      assert.equal(engine.hasExpletive(t), false, t);
+  });
+  await check("expletives: doesn't re-offer once already escalated or ended", () => {
+    const s1 = engine.createSession(); s1.state = "confirm_escalation";
+    assert.equal(engine.checkExpletive(s1, "fuck this", { messages: [{ kind: "bot", text: "x" }] }).messages.length, 1);
+    assert.equal(s1.state, "confirm_escalation");
+    const s2 = engine.createSession(); s2.state = "ended";
+    assert.equal(engine.checkExpletive(s2, "fuck this", { messages: [{ kind: "bot", text: "x" }] }).messages.length, 1);
+    assert.equal(s2.state, "ended");
+  });
+  await check("keyword mode also escalates instantly on an expletive (mirrors localBackend's own sequence)", () => {
+    const s = engine.createSession();
+    const text = "this is such bullshit";
+    const d = engine.ruleIntent(s, text) || { action: "unclear" };
+    const r = engine.checkExpletive(s, text, engine.apply(s, d.action, d.args));
+    assert.equal(s.state, "confirm_escalation");
+    assert.match(r.messages.at(-1).text, /bring in a person right now/);
+  });
   await check("mood: two upset messages in a row offer a person, and keep going resumes", () => {
     const s = engine.createSession();
     engine.noteMood(s, true, engine.apply(s, "lookup_order", { order_id: "EG-10293" }));
@@ -709,6 +749,26 @@ function talk(...inputs) {
     assert.equal(r2.messages.length, 1);                       // one bubble: the offer, not a re-ask plus an offer
     assert.match(r2.messages[0].text, /frustrating/);
     assert.deepEqual(r2.chips, ["Yes, get me an agent", "No, let's keep going"]);
+  });
+
+  await check("expletives: one message escalates immediately over Gemini, no second Gemini call spent on mood", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "unclear" });   // no customer_upset flag at all — expletive alone must be enough
+    const before = geminiCalls;
+    const r = await say(id, "this is fucking unbelievable");
+    assert.equal(r.decision.action, "unclear");   // still the decided move; escalation is layered on after
+    assert.match(r.messages.at(-1).text, /bring in a person right now/);
+    assert.deepEqual(r.chips, ["Yes, get me an agent", "No, let's keep going"]);
+    // decide (1) + voice for the escalation reply (1) — noteMood never runs, so no extra call
+    assert.equal(geminiCalls, before + 2);
+  });
+
+  await check("expletives: escalates even when Gemini is down (rules fallback)", async () => {
+    const id = await newChat();
+    fake = () => "HTTP_500";
+    const r = await say(id, "what the fuck is going on");
+    assert.equal(r.decision.by, "rules (fallback)");
+    assert.match(r.messages.at(-1).text, /bring in a person right now/);
   });
 
   await check("mood: a polite turn in between resets the count", async () => {

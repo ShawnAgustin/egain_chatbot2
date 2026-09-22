@@ -495,7 +495,10 @@ async function localBackend() {
       const which = E.precheck(s, text);
       if (which) return { ...which, decision: { action: "which_order", by: "rules" } };
       const d = E.ruleIntent(s, text) || { action: "unclear" };
-      const reply = E.apply(s, d.action, d.args);
+      let reply = E.apply(s, d.action, d.args);
+      // Deterministic (not AI-judged), so it works in keyword mode too — unlike noteMood, which
+      // needs Gemini and doesn't run here at all.
+      if (d.action !== "restart_chat") reply = E.checkExpletive(s, text, reply);
       return { ...reply, decision: { action: d.action, by: "rules" } };
     }
   };

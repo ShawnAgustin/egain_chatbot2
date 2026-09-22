@@ -253,6 +253,28 @@
     return r;
   }
 
+  /* ---------- Expletives: one strike, not two ----------
+     Regular frustration gets two chances (noteMood, above) — it's Gemini's semantic
+     read on tone, so it needs a Gemini call and only runs in agent mode. Swearing is
+     matched by a plain word list instead: deterministic, so it works even with Gemini
+     down or in keyword mode, and severe enough that it skips the two-strike grace
+     noteMood gives everything else and offers a person on the very first instance.
+     Word-bounded to avoid matching inside words like "assassin", "class" or "grass" —
+     not an exhaustive filter, just the common cases; borderline words like "damn" or
+     "crap" are left alone since they're common frustration filler, not real profanity. */
+  const EXPLETIVES = /\b(fuck\w*|f\*+ck\w*|shit\w*|sh\*+t\w*|bullshit\w*|assh[o0]le\w*|bitch\w*|b\*+tch\w*|c[u\*]+nt\w*|motherf\w*|god ?damn\w*|wtf)\b/i;
+  const hasExpletive = text => EXPLETIVES.test(String(text || ""));
+
+  // Independent of noteMood's upset counter: fires on the first expletive, in either
+  // mode. Keeps whatever the turn already produced (an order lookup, say) and adds the
+  // offer, the same way noteMood does — unless all there was is a plain reprompt.
+  function checkExpletive(s, text, r) {
+    const canOffer = s.state !== "confirm_escalation" && s.state !== "ended";
+    if (!canOffer || !hasExpletive(text)) return r;
+    return offerPerson(s, r.messages.filter(m => !m.reprompt), "I hear you, and I want to get this sorted out properly — " +
+      "let's bring in a person right now. Would you like me to connect you, or would you rather keep going here?");
+  }
+
   /* ---------- Message limit ----------
      A very long back-and-forth usually means the flow isn't working for this
      customer. After TURN_LIMIT customer messages in one chat, stop and ask
@@ -376,8 +398,8 @@
         return go(s, "ended", `Claim opened for ${s.order} — a replacement is on the way. ` +
           `Confirmation and case number are headed to your email. ${MORE_HELP}`);
       case "issue_refund":
-        return go(s, "ended", `Claim opened for ${s.order} — the refund will post to your original ` +
-          `payment method in 3–5 business days. Confirmation is headed to your email. ${MORE_HELP}`);
+        return go(s, "ended", `Claim opened for ${s.order} — once it goes through, the refund will post to your ` +
+          `original payment method in 3–5 business days. Confirmation is headed to your email. ${MORE_HELP}`);
     }
     return miss(s);
   }
@@ -455,5 +477,5 @@
     return null;
   }
 
-  return { ORDERS, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, hitTurnLimit, offerLimit, precheck, ruleIntent, normalizeOrderId, findOrderIds };
+  return { ORDERS, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, hasExpletive, checkExpletive, hitTurnLimit, offerLimit, precheck, ruleIntent, normalizeOrderId, findOrderIds };
 });

@@ -136,7 +136,7 @@
         <h4>At any step</h4>
         <ul>
           <li><b>"Talk to a person"</b> → hand off to a person</li>
-          <li><b>Upset twice in a row, or 3 misses</b> → offer a person, or keep going</li>
+          <li><b>Upset twice, 3 misses, or one profane message</b> → offer a person</li>
           <li><b>Different order number</b> → "still working on X, switch?"</li>
         </ul>
       </div>
@@ -165,7 +165,7 @@
         <li><strong>Only legal moves are offered</strong> to Gemini each step, and it must call exactly one. Illegal picks are rejected.</li>
         <li><strong>The reword is checked.</strong> If it changes a number, date or order id, or drops the follow-up question, the plain draft is sent.</li>
         <li><strong>Graceful fallbacks.</strong> Gemini down → keyword rules. Server down → the same engine runs in the browser.</li>
-        <li><strong>120 automated tests</strong> cover every order, error path, edge case and guardrail. Deployed free on Render.</li>
+        <li><strong>129 automated tests</strong> cover every order, error path, edge case and guardrail. Deployed free on Render.</li>
         <li><strong>orders.json / users.json emulate a database and an auth system</strong> — no
         real infrastructure to stand up for the demo.</li>
       </ul>
@@ -207,7 +207,7 @@
         hashed, salted passwords checked only server-side, not shipped to the browser the way
         offline mode's demo accounts are today.</li>
         <li><strong>Real carrier lookups</strong> (USPS, UPS, FedEx) in place of the mock orders.</li>
-        <li><strong>A true handoff.</strong> Open a ticket or live chat and pass the full transcript so customers never repeat themselves.</li>
+        <li><strong>A true handoff</strong> by phone or live chat, not one fixed channel, with the full transcript passed along so customers never repeat themselves.</li>
         <li><strong>Claims and alerts that actually happen:</strong> file the claim, send the email or SMS.</li>
       </ul>
     </div>

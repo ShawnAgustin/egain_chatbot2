@@ -165,8 +165,16 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
 
   let reply = engine.apply(rec.s, decision.action, decision.args);
   // Starting over wipes the mock's memory of this chat too, so old messages don't bleed into new ones.
-  if (decision.action === "restart_chat") rec.transcript.length = 0;
-  else if (decision.by === "gemini") reply = engine.noteMood(rec.s, decision.upset === true, reply);
+  if (decision.action === "restart_chat") {
+    rec.transcript.length = 0;
+  } else {
+    // Swearing is a plain word match, not a Gemini judgment call, so it runs either way and
+    // skips noteMood's two-strike grace. If it already escalated (state flips to
+    // confirm_escalation), noteMood has nothing left to add for this turn.
+    const before = rec.s.state;
+    reply = engine.checkExpletive(rec.s, text, reply);
+    if (rec.s.state === before && decision.by === "gemini") reply = engine.noteMood(rec.s, decision.upset === true, reply);
+  }
 
   // 4. The engine's reply holds the facts. Let Gemini put it in natural words;
   //    if that fails or drifts from the facts, the plain draft goes out instead.
