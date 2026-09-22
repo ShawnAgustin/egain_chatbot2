@@ -78,7 +78,8 @@
   .sr-only{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
   @media (prefers-reduced-motion:reduce){.msg,.typing i{animation:none}}
 
-  #chips{display:flex; flex-wrap:wrap; gap:8px; padding:4px 22px 14px}
+  #chips{display:flex; flex-wrap:wrap; align-items:center; align-content:center; gap:8px; padding:10px 22px}
+  #chips:empty{padding:0}
   .chip{border:1px solid var(--brand); background:none; color:var(--brand); padding:6px 12px;
         border-radius:20px; font-size:13px; font-family:inherit; cursor:pointer}
   .chip:hover{background:var(--brand); color:#fff}
