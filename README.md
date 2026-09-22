@@ -10,10 +10,6 @@ but it can only ever choose moves that are drawn on the flowchart.
 **Live demo:** https://trackbot-3w10.onrender.com — hosted free, so the first visit can take up to
 a minute while the server wakes up.
 
-**Slides:** [`presentation/TrackBot-presentation.pdf`](presentation/TrackBot-presentation.pdf) (the
-take-home submission deck) · [`presentation/TrackBot-technical-deck.pdf`](presentation/TrackBot-technical-deck.pdf)
-(a deeper technical walkthrough — design decisions, stack, challenges, roadmap)
-
 ![Delivered but missing](screenshots/01-delivered-but-missing.png)
 
 ---
