@@ -19,6 +19,10 @@ const shots = [
       await page.waitForSelector(".orow");
       await page.addStyleTag({ content: "#orderList{max-height:none!important}" });
   } },
+  { name: "06-sign-in",               steps: ["I don't have my order number"], after: async page => {
+      await page.click(".chip-login");
+      await page.waitForTimeout(150);
+  } },
 ];
 
 (async () => {

@@ -55,7 +55,8 @@ of them is actually a lost package. The bot's first job is working out which:
 | Past due, no movement | Genuinely lost | Apologizes, goes straight to a claim |
 
 Every path ends in one of three places: the package is found, a claim is opened, or the
-customer reaches a person. Typing `agent` works from anywhere.
+customer reaches a person. Typing `agent` (or any of the ways people actually ask for a human)
+works from anywhere; the **Talk to a person** chip is the same escape hatch as a button.
 
 Claims, refunds and arrival alerts are simulated: the bot says what it would do (for example,
 that it will alert the customer using the contact information connected to the order) but
@@ -339,7 +340,7 @@ every reply after it is worded by Gemini from the app's facts.
 | `EG-10293` | Past due, no movement — straight to a claim |
 | `EG-99999` | Not found (error 2) |
 | `asdf` | Not an order number (error 1) |
-| `agent` | Reach a person, from any step |
+| `agent` (or the **Talk to a person** chip) | Reach a person, from any step |
 | `my order is eg 58120` | Agent mode pulls the number out of a sentence |
 | `nah not out there, asked next door` | Agent mode understands; keyword mode doesn't |
 | `EG-58120 and EG-77441` | Two order numbers → asks which to look at first |
@@ -419,10 +420,49 @@ drifts apart.
 
 ---
 
+## Standing in for a real backend
+
+Two files do the job real infrastructure would do, so the demo is self-contained (no database,
+no accounts to provision) while still exercising the real conversation flow:
+
+| File | Standing in for | Real equivalent |
+|---|---|---|
+| `public/orders.json` | A carrier's order database — the source `lookup_order` queries | A real order/shipping database, queried by an internal API |
+| `public/users.json` | An authentication system — the source `/api/login` checks | A real auth service: hashed + salted passwords, checked only server-side, sessions or tokens instead of a plain email/password round-trip |
+
+Both are plain JSON, which is exactly why they're **not** how a real system should work: every
+order is visible to anyone who asks (`GET /api/orders`), and in offline mode the mock passwords
+ship straight to the browser (`public/users.js`) so a page opened from disk can still "check" a
+login without a server. That trade-off is fine for a demo where every account and password is
+already fake, and is called out at the point each file is used — see **Sign in** and
+**Test orders** below — but it's the first thing to replace before this could handle real
+customer data. See **With more time**.
+
+---
+
 ## With more time
 
+**Toward a real backend**
+- Replace `orders.json`/`users.json` with a real database and a real auth system — hashed and
+  salted passwords, checked only server-side, sessions or tokens instead of trusting whatever
+  the client claims. The mock JSON files exist purely so this demo needs no infrastructure to
+  run; a real deployment should never ship account data (even fake account data) to the browser
+  the way offline mode currently does.
 - Real carrier lookups (USPS/UPS/FedEx) in place of the mock order data.
+
+**Toward higher uptime**
+- **Backup AI providers.** Right now a Gemini failure falls straight through to keyword
+  matching. One or two backup models (e.g. another Gemini model, or a different provider
+  entirely) tried in between — after Gemini, before keyword rules — would keep the natural-language
+  understanding working through a single provider's outage, with keyword matching as the true
+  last resort rather than the first fallback.
+- Persistent sessions, so a server restart or a sleeping free host doesn't lose an in-progress chat.
+
+**Toward a fuller product**
 - Pass the transcript to the human agent on handoff, so the customer never repeats themselves.
-- Actually send the arrival alert by email or SMS.
+- Actually send the arrival alert by email or SMS, and actually file claims instead of just
+  saying so.
 - Log each turn's chosen move and which decision maker chose it — where customers fall
   out of the flow is the roadmap for what to fix next.
+- Check the meaning of Gemini's rewording, not just that the numbers match, and build a small
+  evaluation set of messy real phrasings to score moves before each change.
