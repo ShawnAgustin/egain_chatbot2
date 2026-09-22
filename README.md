@@ -368,6 +368,21 @@ once an account has more than three or four orders). Server mode checks `POST /a
 page opened straight from disk checks the same accounts from a generated copy, `public/users.js`
 (same idea as `orders.js`).
 
+Every account, password `demo1234` for all of them (the sign-in modal now opens pre-filled
+with the `morgan@example.com` account — select the email field to type a different one):
+
+| Email | Name | Orders |
+|---|---|---|
+| `alex@example.com` | Alex Rivera | `EG-58120`, `EG-58207` |
+| `brianna@example.com` | Brianna Cole | `EG-58333`, `EG-58419`, `EG-58502` |
+| `carlos@example.com` | Carlos Mendez | `EG-77441`, `EG-77502` |
+| `dana@example.com` | Dana Whitfield | `EG-77618`, `EG-77730`, `EG-77845` |
+| `evan@example.com` | Evan Brooks | `EG-77951`, `EG-78060`, `EG-78174` |
+| `farrah@example.com` | Farrah Ibrahim | `EG-10293`, `EG-10388` |
+| `grace@example.com` | Grace Kim | `EG-10412`, `EG-10527` |
+| `henry@example.com` | Henry Osei | `EG-11004`, `EG-11120`, `EG-11236` |
+| `morgan@example.com` | Morgan Ellis | all 11 statuses — see **Test orders** below |
+
 **These are demo credentials only.** They're plain text, and in offline mode they ship to the
 browser exactly like `orders.js` does — fine for mock data, never do this with real passwords.
 A real login checks a hashed password only on the server and never sends it to the client.
@@ -404,6 +419,17 @@ without typing anything.
 | `EG-11004` | Returned to sender | Explains it went back to the sender; goes straight to replacement or refund |
 | `EG-11120` | Delivered but damaged | Apologizes; goes straight to replacement or refund |
 | `EG-11236` | Cancelled and refunded | Says nothing is on its way and when the refund went out |
+| `EG-90101` | Delivered, left with the doorman | Rules out the ordinary explanations first: asks them to check around the door and with neighbors |
+| `EG-90102` | In transit, on schedule | Reassures with the last scan and ETA; offers an arrival alert |
+| `EG-90103` | Out for delivery today | Says it's on the truck and when to expect it; offers an arrival alert |
+| `EG-90104` | Delivery attempted, gate code didn't work | Explains the missed delivery and when the carrier will retry |
+| `EG-90105` | Label created but not shipped yet | Explains it hasn't left the warehouse and when it should ship |
+| `EG-90106` | Held at customs | Explains the hold and the new ETA; not lost |
+| `EG-90107` | Stalled, past due with no movement | Treats it as lost; offers a claim or a few more days |
+| `EG-90108` | Returned to sender | Explains it went back to the sender; goes straight to replacement or refund |
+| `EG-90109` | Delivered to the wrong address | Says it went to the wrong address; goes straight to replacement or refund |
+| `EG-90110` | Delivered but damaged | Apologizes; goes straight to replacement or refund |
+| `EG-90111` | Cancelled and refunded | Says nothing is on its way and when the refund went out |
 
 The **view all orders** link under the chat opens a panel listing every order with its status
 and raw fields. Click a row to look it up. It reads `GET /api/orders`, so it works when the

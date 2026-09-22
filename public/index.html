@@ -189,9 +189,9 @@
     <p>Demo account — try <code>morgan@example.com</code> / <code>demo1234</code>.</p>
     <div class="modal-err" id="loginErr" hidden></div>
     <div class="field"><label for="loginEmail">Email</label>
-      <input id="loginEmail" type="email" autocomplete="username" required></div>
+      <input id="loginEmail" type="email" autocomplete="username" value="morgan@example.com" required></div>
     <div class="field"><label for="loginPassword">Password</label>
-      <input id="loginPassword" type="password" autocomplete="current-password" required></div>
+      <input id="loginPassword" type="password" autocomplete="current-password" value="demo1234" required></div>
     <div class="modal-actions">
       <button type="button" id="loginCancel">Cancel</button>
       <button type="submit" id="loginSubmit">Log in</button>
@@ -339,6 +339,7 @@ function openLoginModal() {
   loginErr.hidden = true;
   loginModal.showModal();
   loginEmail.focus();
+  loginEmail.select();   // fields come pre-filled with the demo account; select so typing a real one replaces it
 }
 loginModal.addEventListener("click", e => { if (e.target === loginModal) loginModal.close(); });
 loginModal.addEventListener("close", () => { loginErr.hidden = true; });
