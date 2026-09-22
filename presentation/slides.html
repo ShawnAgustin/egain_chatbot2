@@ -64,12 +64,15 @@
   .box.accent b{color:var(--accent-dk)}
   .two{display:grid; grid-template-columns:1fr 1fr; gap:12px}
   .lbl{text-align:center; font-size:13.5px; color:var(--muted); line-height:1}
-  .facts{margin-top:14px; display:grid; gap:9px; font-size:17px; list-style:none}
+  .facts{margin-top:12px; display:grid; gap:8px; font-size:16px; list-style:none}
   .facts li{padding-left:22px; position:relative}
   .facts li::before{content:""; position:absolute; left:2px; top:9px; width:9px; height:9px; border-radius:50%; background:var(--brand)}
   .crop{position:relative; width:470px; height:462px; overflow:hidden; border-radius:12px; border:1px solid var(--line); background:#fff;
         box-shadow:0 8px 24px rgba(36,51,80,.14)}
   .crop img{position:absolute; left:0; bottom:0; width:100%; display:block}
+  .awf{width:470px; padding:16px 20px 10px; border-radius:12px; border:1.5px solid var(--brand); background:#fff;
+      box-shadow:0 8px 24px rgba(36,51,80,.14)}
+  .awf img{width:100%; display:block}
   .cap{font-size:13.5px; color:var(--muted); margin-top:7px}
 
   /* ---------- Slide 3 ---------- */
@@ -84,8 +87,8 @@
   .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px 26px}
   .card h3{font:700 22px "Open Sans",Arial,sans-serif; color:var(--ink); margin-bottom:10px}
   .card ul{list-style:none; display:grid; gap:13px; font-size:19px}
-  .facts{gap:9px !important}
-  .facts li{font-size:16.5px !important; line-height:1.32}
+  .facts{gap:8px !important}
+  .facts li{font-size:16px !important; line-height:1.3}
   .card li{padding-left:22px; position:relative}
   .card li::before{content:""; position:absolute; left:2px; top:10px; width:9px; height:9px; border-radius:50%; background:var(--brand)}
   .measure{margin-top:24px; background:var(--ink); color:#fff; border-radius:14px; padding:20px 28px; font-size:19.5px; display:flex; gap:22px; align-items:center}
@@ -166,13 +169,16 @@
         <li><strong>The reword is checked.</strong> If it changes a number, date or order id, or drops the follow-up question, the plain draft is sent.</li>
         <li><strong>Graceful fallbacks.</strong> Gemini down → keyword rules. Server down → the same engine runs in the browser.</li>
         <li><strong>129 automated tests</strong> cover every order, error path, edge case and guardrail. Deployed free on Render.</li>
-        <li><strong>orders.json / users.json emulate a database and an auth system</strong> — no
-        real infrastructure to stand up for the demo.</li>
+        <li><strong>server.js proxies the API key.</strong> The browser only calls
+        <code>/api/session</code> and <code>/api/chat</code> — server.js alone attaches the
+        key, so it never ships to the browser or this public repo.</li>
       </ul>
     </div>
     <div>
-      <div class="crop"><img src="panel-upset.png" alt="TrackBot conversation with an upset customer"></div>
-      <div class="cap">Agent mode: each customer message shows the move chosen, who chose it, and an upset flag. Two upset in a row offers a person.</div>
+      <div class="awf"><img src="../agent-workflow.svg" alt="TrackBot's agentic AI workflow: Gemini identifies intent inside a security layer that only offers legal moves, the engine retrieves and enriches order data, a second Gemini call is the decision layer for wording, and every turn ends in resolution, follow-up, or escalation."></div>
+      <div class="cap"><strong style="color:var(--brand)">The agentic AI workflow this app runs on.</strong> Every turn is this same loop: Gemini
+      decides inside a security layer, the engine gets the facts, Gemini words the reply, the
+      turn resolves, loops, or escalates.</div>
     </div>
   </div>
   <footer><span>Node 18+ · Express · Gemini API · Render</span><span>orders.json / users.json emulate a carrier database and an auth system</span></footer>

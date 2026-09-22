@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TrackBot — technical deep dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  @page { size: 1280px 720px; margin: 0 }
+  /* Same eGain palette as the app and the take-home deck. */
+  :root{
+    --ink:#16181d; --muted:#6b7280; --paper:#fff; --panel:#fff; --line:#e6e6ea;
+    --brand:#b91d8f; --brand-dk:#8f1770; --brand-tint:#fdeafa;
+    --accent:#1863dc; --accent-dk:#0f4aa8; --accent-tint:#e9f4ff;
+    --err:#fbeaea; --err-ink:#9b2226; --green:#1e6b4c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{background:#e7e7eb}
+  body{font:20px/1.4 "Open Sans",-apple-system,"Helvetica Neue",Arial,sans-serif; color:var(--ink); -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+  .slide{position:relative; width:1280px; height:720px; overflow:hidden; background:var(--paper); padding:32px 56px 28px; page-break-after:always; break-after:page; margin:0 auto}
+  .slide + .slide{margin-top:24px}
+  @media print{ html,body{background:none} .slide + .slide{margin-top:0} *{box-shadow:none !important} }
+  .slide::before{content:""; position:absolute; left:0; top:0; bottom:0; width:10px; background:var(--brand)}
+  .slide::after{content:""; position:absolute; left:0; top:0; height:10px; width:170px; background:var(--accent)}
+  header{display:flex; justify-content:space-between; align-items:center; font-size:15px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
+  header b{color:var(--brand); font-weight:700}
+  h1{font:800 33px/1.15 "Open Sans",-apple-system,Arial,sans-serif; color:var(--ink); margin:10px 0 14px; letter-spacing:-.01em}
+  h1 span{color:var(--brand)}
+  footer{position:absolute; left:56px; right:56px; bottom:16px; display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted)}
+  strong{color:var(--ink)}
+  code{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:.85em; background:#f1efe8; border-radius:4px; padding:1px 5px}
+
+  .pill{display:inline-block; font-size:11.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--brand); border-radius:20px; padding:3px 10px; margin-bottom:8px}
+  .pill.a{background:var(--accent)}
+
+  /* ---------- Slide 1 · Design choices ---------- */
+  .s1-grid{display:grid; grid-template-columns:440px 370px 330px; gap:14px; align-items:start}
+  .why{font-size:14.5px; line-height:1.32; margin-bottom:8px}
+  .vs{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:8px}
+  .vs .col{border-radius:10px; padding:8px 11px}
+  .vs .col.win{background:var(--brand-tint); border:1px solid #f0b9e2}
+  .vs .col.lose{background:#f2f2f0; border:1px solid var(--line)}
+  .vs h4{font-size:12px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; line-height:1.25}
+  .vs .col.win h4{color:var(--brand-dk)}
+  .vs .col.lose h4{color:var(--muted)}
+  .vs ul{list-style:none; display:grid; gap:4px; font-size:12px; line-height:1.28}
+  .vs .col.win li::before{content:"✓ "; color:var(--brand); font-weight:700}
+  .vs .col.lose li::before{content:"✕ "; color:#9b9890; font-weight:700}
+  .defbox{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+  .defcard{border:1px solid var(--line); border-radius:10px; padding:5px 11px; font-size:12px; line-height:1.2}
+  .defcard b{display:block; color:var(--brand-dk); font-size:12.5px; margin-bottom:0}
+  .diagram-card{border:1px solid var(--line); border-radius:12px; background:#fff; box-shadow:0 6px 18px rgba(36,51,80,.10); overflow:hidden}
+  .diagram-card.emph{border:1.5px solid var(--brand)}
+  .diagram-card .hd{padding:7px 12px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); line-height:1.25}
+  .diagram-card .hd b{color:var(--ink); font-size:13px; display:block}
+  .diagram-card img{display:block; width:100%}
+
+  /* ---------- Slide 2 · Technical implementation ---------- */
+  .s2-grid{display:grid; grid-template-columns:1fr 1fr; gap:32px; align-items:start}
+  .stack{display:flex; flex-direction:column; gap:12px}
+  .tier{border:1px solid var(--line); border-radius:12px; padding:13px 18px; font-size:15.5px; line-height:1.36}
+  .tier b{color:var(--ink); font-size:17px}
+  .tier.api{border-color:var(--accent); background:var(--accent-tint)}
+  .tier.api b{color:var(--accent-dk)}
+  .endpoints{display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:10px; font-size:14px}
+  .endpoints div{background:#fff; border:1px solid var(--line); border-radius:6px; padding:6px 10px}
+  .agents{display:flex; flex-direction:column; gap:22px; margin-top:16px}
+  .agent-row{display:grid; grid-template-columns:32px 1fr; gap:12px; align-items:start; font-size:16.5px; line-height:1.44}
+  .agent-row .n{width:32px; height:32px; border-radius:50%; background:var(--brand); color:#fff; font:700 15px/32px "Open Sans",Arial; text-align:center}
+  .agent-row:nth-child(2) .n{background:var(--accent)}
+  .agent-row:nth-child(3) .n{background:#73726c}
+  .note{margin-top:10px; border:1.5px dashed #9a988f; border-radius:12px; padding:15px 19px; font-size:15px; line-height:1.4; color:#3c3b38}
+  .note b{color:var(--brand-dk)}
+  .stack-grid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; align-items:start}
+  .stk{border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column}
+  .stk .hd3{background:var(--ink); color:#fff; padding:8px 16px; font-size:15px; font-weight:700}
+  .stk .bd3{padding:12px 16px; font-size:12.8px; line-height:1.32; flex:1}
+  .stk .bd3 b{color:var(--brand-dk)}
+  .stk .bd3 ul{list-style:none; display:grid; gap:9px; margin-top:1px; align-content:start}
+  .stk .bd3 li{padding-left:14px; position:relative}
+  .path{margin:0 0 14px; font-size:14px; color:var(--muted); display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .path b{color:var(--brand-dk); font-weight:700}
+  .path .arrow{color:#c9c6bb; font-size:16px}
+  .stk .bd3 li::before{content:"–"; position:absolute; left:0; color:var(--muted)}
+
+  /* ---------- Slide 3 · Challenges ---------- */
+  .s3-grid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px 16px; align-items:start}
+  .chall{border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column}
+  .chall .hd{background:var(--ink); color:#fff; padding:7px 14px; font-size:14px; font-weight:700; display:flex; align-items:center; gap:7px}
+  .chall .hd .tag{font-size:10px; text-transform:uppercase; letter-spacing:.04em; background:var(--brand); border-radius:12px; padding:2px 7px}
+  .chall .bd{padding:10px 14px; font-size:12px; line-height:1.32; flex:1}
+  .chall .bd b{color:var(--brand-dk)}
+  .chall .bd ul{list-style:none; display:grid; gap:5px; margin-top:4px}
+  .chall .bd li{padding-left:12px; position:relative}
+  .chall .bd li::before{content:"–"; position:absolute; left:0; color:var(--muted)}
+
+  /* ---------- Slide 4 · With more time ---------- */
+  .s4-grid{display:grid; grid-template-columns:1fr 1fr; gap:28px; align-items:start}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:22px 28px; display:flex; flex-direction:column}
+  .card h3{font:700 20px "Open Sans",Arial,sans-serif; color:var(--ink); margin-bottom:13px}
+  .card ul{list-style:none; display:grid; gap:12px; font-size:15.5px; line-height:1.36; align-content:start}
+  .card li{padding-left:22px; position:relative}
+  .card li::before{content:""; position:absolute; left:2px; top:9px; width:8px; height:8px; border-radius:50%; background:var(--brand)}
+</style>
+</head>
+<body>
+
+<!-- ============ 1 · DESIGN CHOICES ============ -->
+<section class="slide">
+  <header><span><b>TrackBot</b> · lost package assistant</span><span>1 / 4 · Design choices</span></header>
+  <h1>Why an <span>agentic</span> flow, not a keyword-matched script</h1>
+  <div class="s1-grid">
+    <div>
+      <p class="why">Two decisions came before any flow was drawn: whether to use AI at all, then what
+      shape it should take. A keyword bot only fires on triggers it expects; <em>"nah it's definitely
+      not out there, asked next door too"</em> means "already checked," but no trigger list catches it.
+      A free-form AI chatbot swings too far the other way — it can be talked into promising refunds or
+      inventing policy. The agentic loop is the middle path: Gemini reads intent like a free-form model
+      would, but every fact and every move it's <em>allowed</em> to make still comes from the app.</p>
+      <div class="vs">
+        <div class="col lose"><h4>Keyword-only</h4><ul>
+          <li>Rigid triggers, misses anything unscripted</li>
+          <li>No read on intent or tone</li>
+          <li>Kept here as the offline fallback</li>
+        </ul></div>
+        <div class="col lose"><h4>Free-form AI chatbot</h4><ul>
+          <li>Understands phrasing — but can promise anything</li>
+          <li>Facts and policy come from the model itself</li>
+          <li>One good jailbreak away from a bad answer</li>
+        </ul></div>
+        <div class="col win"><h4>Agentic loop (this app)</h4><ul>
+          <li>Understands phrasing, same as free-form</li>
+          <li>One call picks one move from a legal list</li>
+          <li>Facts always come from the app, not the model</li>
+        </ul></div>
+      </div>
+      <div class="defbox">
+        <div class="defcard"><b>Intent layer</b>Function-calling, <code class="mono">mode:"ANY"</code> — one
+        move, chosen only from what's legal at the customer's current step.</div>
+        <div class="defcard"><b>Guardrails</b>The server re-validates the move regardless of what the
+        model returned. An illegal pick is rejected, not trusted.</div>
+        <div class="defcard"><b>Fact isolation</b>Gemini never holds facts — only rewords a draft the
+        engine built from real data, checked afterward for drift.</div>
+        <div class="defcard"><b>Input fencing</b>Customer text is fenced as data in the prompt, not
+        instructions — "ignore your rules…" is just a string to read.</div>
+      </div>
+    </div>
+    <div class="diagram-card emph">
+      <div class="hd"><b>The agentic AI loop</b>identify → retrieve → reword → outcome</div>
+      <img src="../agent-workflow.svg" alt="Agentic AI workflow: Gemini identifies intent inside a security layer, the engine retrieves and enriches data, Gemini rewords the draft, and the turn ends in resolution, follow-up, or escalation.">
+    </div>
+    <div class="diagram-card">
+      <div class="hd"><b>Conversation flow</b>the tree every legal move traces back to</div>
+      <img src="flowchart-core.svg" alt="Lost package conversation decision tree: order lookup, tracking-status triage into three branches, ending in close-out, claim, or agent handoff.">
+    </div>
+  </div>
+  <footer><span>Node 18+ · Express · Gemini API (function calling) · 10 states, 19 moves</span><span>Full guardrail layer (upset/miss/profanity, mid-chat switching) in the appendix flow</span></footer>
+</section>
+
+<!-- ============ 2 · TECHNICAL IMPLEMENTATION ============ -->
+<section class="slide">
+  <header><span><b>TrackBot</b> · lost package assistant</span><span>2 / 4 · Technical implementation</span></header>
+  <h1>What it took to build it, given those design choices</h1>
+  <div class="path"><b>HTML/CSS/JS frontend</b><span class="arrow">→</span><b>Node/Express API
+  (proxy server)</b><span class="arrow">→</span><b>fine-tuning the AI's behavior</b><span
+  style="color:#8a8880">— that third phase is most of what's below</span></div>
+  <div class="stack-grid">
+    <div class="stk">
+      <div class="hd3">Languages &amp; runtime</div>
+      <div class="bd3"><ul>
+        <li><b>HTML/CSS/vanilla JS</b> build the one-page frontend — no framework, no build step,
+        just <code>&lt;script&gt;</code> tags</li>
+        <li><b>Node.js 18+</b> runs <code>server.js</code> as the Express proxy</li>
+        <li><code>engine.js</code> — the exact same file — is <code>require()</code>'d server-side and
+        <code>&lt;script&gt;</code>-loaded client-side, so both "brains" run identical logic</li>
+      </ul></div>
+    </div>
+    <div class="stk">
+      <div class="hd3">Services &amp; hosting</div>
+      <div class="bd3"><ul>
+        <li><b>Google Gemini API</b> — called twice a turn via server-side <code>fetch</code>, key
+        attached as an <code>x-goog-api-key</code> header, never from the browser</li>
+        <li><b>Render</b> — <code>server.js</code> runs there as its own web service, auto-deployed
+        straight from GitHub on every push</li>
+        <li><b>GitHub</b> — hosts the public repo Render and any reviewer both pull from</li>
+      </ul></div>
+    </div>
+    <div class="stk">
+      <div class="hd3">Frameworks &amp; libraries</div>
+      <div class="bd3"><ul>
+        <li><b>Express</b> defines every REST route and runs CORS + rate-limit middleware before a
+        request ever reaches the flow engine</li>
+        <li><b>Playwright</b> drives real Chrome to click through the UI, screenshot each state, and
+        catch layout regressions; it also renders this deck to PDF</li>
+        <li>Node's built-in test runner — <code>node --test</code> runs all 129 tests, no extra
+        dependency</li>
+      </ul></div>
+    </div>
+    <div class="stk">
+      <div class="hd3">CS methodologies &amp; patterns</div>
+      <div class="bd3"><ul>
+        <li><b>Finite state machine</b> — one <code>STATES</code> object keyed by name; the whole
+        conversation is just <code>s.state</code> plus a few fields</li>
+        <li><b>Constrained decoding</b> — Gemini's function-calling enum is rebuilt from
+        <code>allowedActions(s)</code> every turn, so illegal moves are never offered</li>
+        <li><b>Proxy + graceful degradation</b> — <code>server.js</code> alone holds the key; a
+        try/catch around the Gemini call falls through to the same rule engine the browser itself
+        falls back to</li>
+      </ul></div>
+    </div>
+    <div class="stk">
+      <div class="hd3">Data layer</div>
+      <div class="bd3"><ul>
+        <li><code>orders.json</code> / <code>users.json</code> — hand-written, loaded once with
+        <code>require()</code>, queried as plain in-memory arrays</li>
+        <li>One-to-many enforced by convention (each order carries a <code>userId</code>) and checked
+        by a dedicated test, not a schema</li>
+      </ul></div>
+    </div>
+    <div class="stk">
+      <div class="hd3">Testing &amp; verification</div>
+      <div class="bd3"><ul>
+        <li><b>129 tests</b> run directly against the Express app and the engine module — real HTTP
+        calls, no mocks</li>
+        <li>Playwright screenshots the running app and measures bounding boxes to catch visual
+        regressions</li>
+        <li>Dedicated tests send malformed origins and message floods to prove CORS and rate limits
+        actually reject them</li>
+      </ul></div>
+    </div>
+  </div>
+  <footer><span>Node 18+ · Express · Gemini API (function calling) · 129 automated tests</span><span>server.js is a proxy for the key — see Challenges, next</span></footer>
+</section>
+
+<!-- ============ 3 · CHALLENGES FACED ============ -->
+<section class="slide">
+  <header><span><b>TrackBot</b> · lost package assistant</span><span>3 / 4 · Challenges faced</span></header>
+  <h1>Edge cases, security, and being honest about scale</h1>
+  <div class="s3-grid">
+    <div class="chall">
+      <div class="hd">Edge cases<span class="tag">input</span></div>
+      <div class="bd"><b>31 mock orders, 11 statuses</b> surfaced gaps a happy-path demo wouldn't:
+      <ul>
+        <li>A new order number mid-chat was silently dropped — now it asks before switching</li>
+        <li>Misdelivered orders were told to "check the door" — now they open a claim directly</li>
+        <li>"already checked next door" read as unclear to keywords — the agent reads it as an answer</li>
+      </ul></div>
+    </div>
+    <div class="chall">
+      <div class="hd">Security<span class="tag">model</span></div>
+      <div class="bd">A model that can talk freely can be talked into promising things:
+      <ul>
+        <li>Customer text is fenced as data, not instructions — "ignore your rules…" is inert</li>
+        <li>Function calling restricts Gemini to a legal move list; the server re-checks anyway</li>
+        <li>Order numbers from the model are validated and looked up, never trusted alone</li>
+        <li>A reworded reply that changes a number, date, or id is discarded for the plain draft</li>
+      </ul></div>
+    </div>
+    <div class="chall">
+      <div class="hd">Proxy server<span class="tag">key</span></div>
+      <div class="bd">This repo is public, so the key can never ship in anything downloaded:
+      <ul>
+        <li><code>server.js</code> alone holds or sends the key — browser calls it, never Gemini</li>
+        <li><b>Render hosts that proxy</b>, key as a private env var, never committed to GitHub</li>
+        <li>CORS allowlists origins; rate limits stop a script that ignores CORS anyway</li>
+        <li>A compromised frontend has nothing to leak — the key was never there</li>
+      </ul></div>
+    </div>
+    <div class="chall">
+      <div class="hd">Stale paths &amp; loops<span class="tag">flow</span></div>
+      <div class="bd">A confused customer or a wrong pick shouldn't be able to loop forever:
+      <ul>
+        <li>12 messages in one chat → forced offer to escalate or restart</li>
+        <li>3 unmatched replies, or 2 upset messages, trigger the same offer</li>
+        <li>Restart wipes server <em>and</em> visible state — no half-remembered session</li>
+      </ul></div>
+    </div>
+    <div class="chall">
+      <div class="hd">Simulating scale<span class="tag">scope</span></div>
+      <div class="bd">A take-home can't stand up real infrastructure, but it has to behave like it did:
+      <ul>
+        <li><code>orders.json</code> / <code>users.json</code> stand in for a database and auth
+        system, with the one-to-many shape a real one would have</li>
+        <li>No ORM, no query language — just <code>require()</code> and array lookups</li>
+        <li>Claims and alerts are logged as sent, not actually sent — no real email/SMS service</li>
+        <li>The README names exactly what's simulated — the tradeoff is explicit, not hidden</li>
+      </ul></div>
+    </div>
+  </div>
+  <footer><span>&nbsp;</span><span>Each mitigation above has a dedicated test in the 129-test suite</span></footer>
+</section>
+
+<!-- ============ 4 · WITH MORE TIME ============ -->
+<section class="slide">
+  <header><span><b>TrackBot</b> · lost package assistant</span><span>4 / 4 · With more time</span></header>
+  <h1>What I'd fix and add — scoped out by time and scale, not overlooked</h1>
+  <div class="s4-grid">
+    <div class="card">
+      <h3>To add later</h3>
+      <ul>
+        <li><strong>A real database and real auth with full CRUD,</strong> replacing orders.json /
+        users.json — today's data is read-only lookups; a real backend needs to create, update, and
+        delete orders and accounts too, with hashed, salted passwords checked only server-side.</li>
+        <li><strong>Real carrier lookups and richer API calls</strong> — live USPS/UPS/FedEx tracking
+        and delay data, plus the create/update/cancel calls a real claim needs, not just a read-only
+        lookup.</li>
+        <li><strong>A true handoff</strong> by phone or live chat, with the full transcript passed
+        along so customers never repeat themselves.</li>
+        <li><strong>Claims and alerts that actually happen:</strong> file the claim, send the email or SMS.</li>
+        <li><strong>More connectors and tools</strong> — CRM, payment/refund processors, specialized
+        agents behind each one's own API, wired in as scoped calls rather than flow rewrites.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>To work on</h3>
+      <ul>
+        <li><strong>1–2 backup AI providers</strong> ahead of the keyword fallback — a second model or
+        provider before falling all the way back, keyword matching as the true last resort.</li>
+        <li><strong>Configurability</strong> — tone/persona and guardrail parameters (miss limit, upset
+        threshold, escalation wording) as settings, not hardcoded constants.</li>
+        <li><strong>Check meaning, not just numbers,</strong> when validating Gemini's rewording.</li>
+        <li><strong>Wire up the analytics already designed in:</strong> drop-off by step, escalation
+        rate, resolution-without-a-human rate, straight from the state transitions <code>engine.js</code>
+        already logs.</li>
+      </ul>
+    </div>
+  </div>
+  <footer><span>Node 18+ · Express · Gemini API · Render</span><span>github.com/ShawnAgustin/egain_chatbot2</span></footer>
+</section>
+
+</body>
+</html>
