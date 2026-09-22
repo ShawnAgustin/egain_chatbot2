@@ -96,7 +96,7 @@ app.post("/api/login", rateLimit(LOGIN_LIMIT), (req, res) => {
   const password = String(req.body?.password || "");
   const user = users[email];
   if (!user || user.password !== password) return res.status(401).json({ error: "Email or password not recognized." });
-  const orders = user.orders.map(id => ({ id, useCase: engine.ORDERS[id]?.useCase || "" }));
+  const orders = user.orders.map(id => ({ id, status: engine.ORDERS[id]?.status || "", useCase: engine.ORDERS[id]?.useCase || "" }));
   res.json({ name: user.name, orders });
 });
 

@@ -207,7 +207,7 @@ function talk(...inputs) {
     assert.equal(engine.hitTurnLimit(s), true, "turn 12");
     last = engine.offerLimit(s);
     assert.equal(s.state, "confirm_limit");
-    assert.match(last.messages[0].text, /12 messages now/);
+    assert.match(last.messages[0].text, /hit its 12-message limit/);
     assert.deepEqual(last.chips, ["Get me a person", "Start over"]);
   });
 
@@ -541,7 +541,7 @@ function talk(...inputs) {
     r = await say(id, "message 12");
     assert.equal(geminiCalls, before, "the limit turn should not spend a Gemini call");
     assert.equal(r.decision.action, "turn_limit"); assert.equal(r.decision.by, "rules");
-    assert.match(r.messages[0].text, /12 messages now/);
+    assert.match(r.messages[0].text, /hit its 12-message limit/);
     assert.deepEqual(r.chips, ["Get me a person", "Start over"]);
   });
 

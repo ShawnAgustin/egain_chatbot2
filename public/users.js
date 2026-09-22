@@ -68,5 +68,22 @@ window.TRACKBOT_USERS = {
       "EG-11120",
       "EG-11236"
     ]
+  },
+  "morgan@example.com": {
+    "name": "Morgan Ellis",
+    "password": "demo1234",
+    "orders": [
+      "EG-90101",
+      "EG-90102",
+      "EG-90103",
+      "EG-90104",
+      "EG-90105",
+      "EG-90106",
+      "EG-90107",
+      "EG-90108",
+      "EG-90109",
+      "EG-90110",
+      "EG-90111"
+    ]
   }
 };

@@ -110,6 +110,11 @@
   .odet{font:11.5px "Courier New",monospace; color:var(--muted); overflow-wrap:anywhere}
 
   .chip-login{border-style:dashed}
+  .acct-orders{align-self:flex-start; max-width:92%; margin-top:2px; border:1px solid var(--line); border-radius:14px;
+              overflow:hidden; background:var(--panel); animation:pop .16s ease-out}
+  .acct-orders-head{padding:8px 14px; background:var(--bot); color:var(--muted); font-size:12px; border-bottom:1px solid var(--line)}
+  .acct-orders-list{max-height:280px; overflow-y:auto}
+  @media (prefers-reduced-motion:reduce){.acct-orders{animation:none}}
   dialog#loginModal{border:0; border-radius:16px; padding:0; width:min(360px, 90vw);
         box-shadow:0 20px 50px rgba(36,51,80,.28); font:inherit; color:var(--ink)}
   dialog#loginModal::backdrop{background:rgba(31,36,48,.45)}
@@ -268,6 +273,7 @@ function busy(on) {
   entry.disabled = sendBtn.disabled = on;
   restartBtn.disabled = on;
   chips.querySelectorAll("button").forEach(b => (b.disabled = on));
+  thread.querySelectorAll(".acct-orders button").forEach(b => (b.disabled = on));
 }
 
 /* ---------- One customer turn ---------- */
@@ -280,7 +286,14 @@ async function submit(raw) {
   try {
     const reply = await backend.submit(text);
     typing.remove();
-    addDecision(reply.decision);
+    if (reply.decision?.action === "restart_chat") {
+      // A real restart, not just another reply: clear the visible history instead of
+      // appending the fresh greeting under everything that came before.
+      thread.replaceChildren();
+      chips.replaceChildren();
+    } else {
+      addDecision(reply.decision);
+    }
     render(reply);
   } catch (e) {
     typing.remove();
@@ -329,20 +342,42 @@ async function login(email, password) {
   }
   const rec = (window.TRACKBOT_USERS || {})[email.trim().toLowerCase()];
   if (!rec || rec.password !== password) throw new Error("Email or password not recognized.");
-  return { name: rec.name, orders: rec.orders.map(id => ({ id, useCase: window.TrackBotEngine.ORDERS[id]?.useCase || "" })) };
+  return {
+    name: rec.name,
+    orders: rec.orders.map(id => {
+      const o = window.TrackBotEngine.ORDERS[id] || {};
+      return { id, status: o.status || "", useCase: o.useCase || "" };
+    })
+  };
 }
 
+// A real list, not a row of chips — some accounts (the demo one especially) hold a dozen
+// orders, which would wrap into an unreadable wall of pills. Reuses the "view all orders"
+// row styling (.orow etc.) so a signed-in account and that debug panel look like one system.
 function renderLoginSuccess(name, orders) {
-  add("bot", `Welcome back, ${name}! Here's what's on your account — pick one to look it up:`);
+  add("bot", `Welcome back, ${name}! ${orders.length} order${orders.length === 1 ? "" : "s"} on your ` +
+    `account — tap one to look it up:`);
   chips.replaceChildren();
+
+  const el = (tag, cls, text) => Object.assign(document.createElement(tag), { className: cls, textContent: text ?? "" });
+  const box = el("div", "acct-orders");
+  box.appendChild(el("div", "acct-orders-head", `${name}'s orders`));
+  const list = el("div", "acct-orders-list");
   orders.forEach(o => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "chip";
-    b.textContent = o.useCase ? `${o.id} — ${o.useCase}` : o.id;
-    b.onclick = () => submit(o.id);
-    chips.appendChild(b);
+    const row = el("button", "orow");
+    row.type = "button";
+    row.title = "Look up " + o.id;
+    const left = el("span", "oleft");
+    left.append(el("span", "oid", o.id), el("span", "ostatus", o.status));
+    const right = el("span", "oright");
+    right.append(el("span", "ouse", o.useCase || o.id));
+    row.append(left, right);
+    row.onclick = () => submit(o.id);
+    list.appendChild(row);
   });
+  box.appendChild(list);
+  thread.appendChild(box);
+  thread.scrollTop = thread.scrollHeight;
 }
 
 loginForm.onsubmit = async e => {

@@ -270,8 +270,8 @@
 
   function offerLimit(s) {
     s.state = "confirm_limit";
-    return reply([bot(`We've been at this a while — ${TURN_LIMIT} messages now. I can connect you with ` +
-      `a person, or we can start the chat over. Which would you prefer?`)], STATES.confirm_limit.chips());
+    return reply([bot(`This chat has hit its ${TURN_LIMIT}-message limit, so I'll pause here rather than keep ` +
+      `going in circles. I can connect you with a person, or we can restart the conversation — which would you prefer?`)], STATES.confirm_limit.chips());
   }
 
   /* ---------- Execute a decided action ----------

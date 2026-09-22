@@ -16,7 +16,7 @@ a minute while the server wakes up.
 
 **Quick look, no setup.** Open `public/index.html` in any browser. It tries the hosted Gemini
 agent first (see `public/config.js`). If that's asleep or unreachable, it runs the full flow
-locally, with keyword matching deciding each step and all 20 test orders available. Flip the
+locally, with keyword matching deciding each step and all 31 test orders available. Flip the
 **AI** switch in the chat header to force keyword mode.
 
 **With the Gemini agent** (needs Node 18+):
@@ -38,7 +38,7 @@ asking, and switches to Gemini when it answers, unless you turned the switch off
 disabled when no server is configured.
 
 ```bash
-npm test                    # 109 tests; no key or network needed
+npm test                    # 120 tests; no key or network needed
 ```
 
 ---
@@ -93,9 +93,10 @@ looks up the new order; "no" returns to the same step. The same applies when a r
 in the **view all orders** panel.
 
 **Restart, any time.** The ↻ button in the header wipes the session — misses, mood, order in
-progress, everything — and starts a brand new chat in whichever mode (agent or keyword) is
-currently active. The same `restart_chat` move is also what "Start over" uses at the message
-limit below.
+progress, everything — clears the visible conversation, and starts a brand new chat in
+whichever mode (agent or keyword) is currently active. Typing or tapping "Start over" (at the
+message limit below) triggers the same `restart_chat` move and clears the screen the same way,
+not just the state behind it.
 
 **A limit on how long one chat can run.** After 12 customer messages, the bot stops and asks
 whether to bring in a person or start the chat over, instead of a confused loop continuing
@@ -276,16 +277,16 @@ all fall back to keyword matching or a re-prompt. The customer never sees a cras
 public/
   index.html     chat interface; talks to the server, or runs the engine locally
   engine.js      the conversation flow — shared by browser and server
-  orders.json    20 mock orders, one per situation the bot handles
+  orders.json    31 mock orders, one per situation the bot handles
   orders.js      the same orders as a script, so a page opened from disk can use them (generated)
-  users.json     8 mock accounts (email + password), each linked to a few orders
+  users.json     9 mock accounts (email + password), each linked to a few orders
   users.js       the same accounts as a script, for signing in from disk (generated)
   config.js      where the agent server lives, if it's hosted separately
 build-orders.js  regenerates public/orders.js from orders.json (npm run build:orders)
 build-users.js   regenerates public/users.js from users.json (npm run build:users)
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          109 tests: every path, every error, every guardrail
+test.js          120 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design
@@ -343,7 +344,7 @@ every reply after it is worded by Gemini from the app's facts.
 | `nah not out there, asked next door` | Agent mode understands; keyword mode doesn't |
 | `EG-58120 and EG-77441` | Two order numbers → asks which to look at first |
 | `I don't have my order number` | Offers a person, and a "Sign in" option |
-| Sign in as `alex@example.com` / `demo1234` | Lists that account's orders as chips, no typing needed |
+| Sign in as `morgan@example.com` / `demo1234` | Lists all 11 use cases as a scrollable order list, no typing needed |
 | `EG-10293`, then `EG-77441` | A different order mid-chat → asks whether to switch or stay |
 | `EG-10293`, then `this is so annoying`, then `SERIOUSLY?? this is ridiculous` | Two upset messages in a row → offers a person |
 | Any 12 messages in a row | Offers a person or a restart — try the ↻ button in the header too |
@@ -357,10 +358,14 @@ ordered anything"*), the bot offers a person **and** a "Sign in to see my orders
 opens a modal. A successful sign-in replaces the chips with the account's own orders, ready to
 tap and look up — no order number needed.
 
-`public/users.json` holds 8 mock accounts (email + password), each linked to 2–3 of the 20
+`public/users.json` holds 9 mock accounts (email + password), each linked to a few of the 31
 orders, covering all of them. Every demo password is `demo1234` — the modal shows a working
-example. Server mode checks `POST /api/login`; a page opened straight from disk checks the
-same accounts from a generated copy, `public/users.js` (same idea as `orders.js`).
+example. One account, **`morgan@example.com`**, owns one order of every distinct status the
+bot handles (all 11), so signing in there is the fastest way to see the whole flow — every
+route, replied to with a real list instead of a wall of chip buttons (which stops making sense
+once an account has more than three or four orders). Server mode checks `POST /api/login`; a
+page opened straight from disk checks the same accounts from a generated copy, `public/users.js`
+(same idea as `orders.js`).
 
 **These are demo credentials only.** They're plain text, and in offline mode they ship to the
 browser exactly like `orders.js` does — fine for mock data, never do this with real passwords.
@@ -372,7 +377,7 @@ A real login checks a hashed password only on the server and never sends it to t
 
 ## Test orders
 
-`public/orders.json` holds 20 mock orders, one per situation, standing in for a carrier
+`public/orders.json` holds 31 mock orders, one per situation, standing in for a carrier
 tracking API. Type any of these order numbers into the chat, or sign in (above) to get them
 without typing anything.
 
