@@ -38,7 +38,7 @@ asking, and switches to Gemini when it answers, unless you turned the switch off
 disabled when no server is configured.
 
 ```bash
-npm test                    # 120 tests; no key or network needed
+npm test                    # 121 tests; no key or network needed
 ```
 
 ---
@@ -287,7 +287,7 @@ build-orders.js  regenerates public/orders.js from orders.json (npm run build:or
 build-users.js   regenerates public/users.js from users.json (npm run build:users)
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          120 tests: every path, every error, every guardrail
+test.js          121 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design
@@ -367,6 +367,11 @@ route, replied to with a real list instead of a wall of chip buttons (which stop
 once an account has more than three or four orders). Server mode checks `POST /api/login`; a
 page opened straight from disk checks the same accounts from a generated copy, `public/users.js`
 (same idea as `orders.js`).
+
+**Users and orders are one-to-many:** each account's `orders` field is an array of order ids
+(2–11 per account below), and every one of the 31 orders in `orders.json` belongs to exactly
+one account — none are shared between accounts, and none are orphaned. A test checks both
+directions on every run.
 
 Every account, password `demo1234` for all of them (the sign-in modal now opens pre-filled
 with the `morgan@example.com` account — select the email field to type a different one):

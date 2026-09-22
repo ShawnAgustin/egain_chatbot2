@@ -582,6 +582,20 @@ function talk(...inputs) {
     assert.equal((await wrongPass.json()).error, (await unknown.json()).error);
   });
 
+  await check("users.json <-> orders.json: every account's orders exist, and every order has exactly one owner", () => {
+    const users = require("./public/users.json");
+    const owners = new Map();   // order id -> which account(s) claim it
+    for (const [email, u] of Object.entries(users)) {
+      assert.ok(u.orders.length > 0, `${email} owns no orders`);
+      for (const id of u.orders) {
+        assert.ok(orders[id], `${email} claims ${id}, which isn't in orders.json`);
+        owners.set(id, [...(owners.get(id) || []), email]);
+      }
+    }
+    for (const id of Object.keys(orders))
+      assert.equal((owners.get(id) || []).length, 1, `${id} has ${(owners.get(id) || []).length} owners, want exactly 1`);
+  });
+
   await check("API key travels in a header, never the URL", async () => {
     assert.equal(lastGeminiRequest.headers["x-goog-api-key"], "test-key");
     assert.ok(!lastGeminiRequest.url.includes("test-key"));
