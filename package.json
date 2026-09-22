@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node server.js",
     "build:orders": "node build-orders.js",
+    "build:users": "node build-users.js",
     "test": "node test.js"
   },
   "dependencies": {

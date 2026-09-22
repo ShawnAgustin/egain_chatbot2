@@ -16,6 +16,7 @@ const crypto = require("crypto");
 const path = require("path");
 const engine = require("./public/engine.js");
 const gemini = require("./gemini.js");
+const users = require("./public/users.json");   // mock accounts for this demo; see public/users.json
 
 const app = express();
 app.use(express.json({ limit: "4kb" }));
@@ -58,6 +59,7 @@ function rateLimit(maxPerMinute) {
 }
 const CHAT_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN) || 30;
 const SESSION_LIMIT = Number(process.env.SESSION_LIMIT_PER_MIN) || 10;
+const LOGIN_LIMIT = Number(process.env.LOGIN_LIMIT_PER_MIN) || 10;
 
 // Serve ONLY the public folder. Serving the project root would expose .env.
 app.use(express.static(path.join(__dirname, "public")));
@@ -86,6 +88,18 @@ app.get("/api/status", (req, res) => {
 /* ---- Every mock order, for the "view all orders" debug panel ---- */
 app.get("/api/orders", (req, res) => res.json(engine.ORDERS));
 
+/* ---- Sign in: a mock account lookup, so a customer without an order number can find one ----
+   These are demo accounts (see public/users.json) — never check real passwords like this;
+   a real login hashes the password and never ships it to the browser at all. */
+app.post("/api/login", rateLimit(LOGIN_LIMIT), (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  const user = users[email];
+  if (!user || user.password !== password) return res.status(401).json({ error: "Email or password not recognized." });
+  const orders = user.orders.map(id => ({ id, useCase: engine.ORDERS[id]?.useCase || "" }));
+  res.json({ name: user.name, orders });
+});
+
 /* ---- Start a conversation ---- */
 app.post("/api/session", rateLimit(SESSION_LIMIT), (req, res) => {
   const id = crypto.randomUUID();
@@ -104,6 +118,14 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
   const text = String(req.body.text || "").trim().slice(0, MAX_TEXT);
   if (!text) return res.status(400).json({ error: "Empty message." });
   rec.touched = Date.now();
+
+  // A very long chat: stop and offer a person or a restart, before spending a Gemini call on it.
+  if (engine.hitTurnLimit(rec.s)) {
+    const limitReply = engine.offerLimit(rec.s);
+    remember(rec, "Customer", text);
+    limitReply.messages.forEach(m => remember(rec, "Assistant", m.text));
+    return res.json({ ...limitReply, decision: { action: "turn_limit", by: "rules" } });
+  }
 
   // More than one order number in the message: ask which first, without spending a Gemini call.
   const which = engine.precheck(rec.s, text);
@@ -142,12 +164,15 @@ app.post("/api/chat", rateLimit(CHAT_LIMIT), async (req, res) => {
   }
 
   let reply = engine.apply(rec.s, decision.action, decision.args);
-  if (decision.by === "gemini") reply = engine.noteMood(rec.s, decision.upset === true, reply);
+  // Starting over wipes the mock's memory of this chat too, so old messages don't bleed into new ones.
+  if (decision.action === "restart_chat") rec.transcript.length = 0;
+  else if (decision.by === "gemini") reply = engine.noteMood(rec.s, decision.upset === true, reply);
 
   // 4. The engine's reply holds the facts. Let Gemini put it in natural words;
   //    if that fails or drifts from the facts, the plain draft goes out instead.
+  //    Skipped on a restart: like the opening greeting, that message is always fixed.
   let voiceFallback;
-  if (decision.by === "gemini") {
+  if (decision.by === "gemini" && decision.action !== "restart_chat") {
     try {
       reply.messages = await gemini.phraseReply({
         transcript: rec.transcript.join("\n"), text, messages: reply.messages

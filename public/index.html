@@ -37,6 +37,10 @@
   .switch:has(input:disabled){opacity:.5; cursor:not-allowed}
   .switch input:disabled{cursor:not-allowed}
   .mode.agent{background:rgba(201,123,46,.28); color:#ffe2c2}
+  .iconbtn{border:0; background:rgba(255,255,255,.12); color:#d9dfeb; width:26px; height:26px; border-radius:50%;
+           font-size:14px; line-height:1; cursor:pointer; flex:none; display:flex; align-items:center; justify-content:center}
+  .iconbtn:hover{background:rgba(255,255,255,.22); color:#fff}
+  .iconbtn:disabled{opacity:.4; cursor:not-allowed}
   #thread{height:430px; overflow-y:auto; overflow-x:hidden; padding:18px 22px 10px; display:flex; flex-direction:column; gap:3px; background:var(--panel)}
 
   /* Chat bubbles. --bubble is the fill; the tail is drawn with two pseudo-elements,
@@ -69,7 +73,7 @@
   .chip{border:1px solid var(--navy); background:none; color:var(--navy); padding:6px 12px;
         border-radius:20px; font-size:13px; font-family:inherit; cursor:pointer}
   .chip:hover{background:var(--navy); color:var(--paper)}
-  form{display:flex; gap:8px; padding:11px 14px; border-top:1px solid var(--line)}
+  #composer{display:flex; gap:8px; padding:11px 14px; border-top:1px solid var(--line)}
   input{flex:1; border:0; padding:14px 16px; font-size:14.5px; font-family:inherit; background:none; color:var(--ink); outline:none}
   #entry{border:1px solid var(--line); border-radius:22px; padding:10px 17px; background:#faf9f6}
   #entry:focus{border-color:var(--navy); background:#fff}
@@ -104,6 +108,26 @@
   .oright{display:flex; flex-direction:column; min-width:0}
   .ouse{font-size:13.5px}
   .odet{font:11.5px "Courier New",monospace; color:var(--muted); overflow-wrap:anywhere}
+
+  .chip-login{border-style:dashed}
+  dialog#loginModal{border:0; border-radius:16px; padding:0; width:min(360px, 90vw);
+        box-shadow:0 20px 50px rgba(36,51,80,.28); font:inherit; color:var(--ink)}
+  dialog#loginModal::backdrop{background:rgba(31,36,48,.45)}
+  .modal-head{background:var(--navy); color:var(--paper); padding:16px 22px; font-size:16px}
+  .modal-body{padding:18px 22px 22px}
+  .modal-body p{margin:0 0 14px; font-size:13px; color:var(--muted)}
+  .field{display:flex; flex-direction:column; gap:5px; margin-bottom:13px}
+  .field label{font-size:12.5px; color:var(--muted)}
+  .field input{border:1px solid var(--line); border-radius:8px; padding:9px 11px; font-size:14.5px; font-family:inherit; background:#faf9f6}
+  .field input:focus{outline:none; border-color:var(--navy); background:#fff}
+  .modal-err{background:var(--err); color:var(--err-ink); border-radius:8px; padding:8px 11px; font-size:13px; margin-bottom:13px}
+  .modal-err[hidden]{display:none}
+  .modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:4px}
+  .modal-actions button{font:inherit; font-size:13.5px; border-radius:20px; padding:8px 18px; cursor:pointer}
+  #loginCancel{border:1px solid var(--line); background:none; color:var(--muted)}
+  #loginSubmit{border:0; background:var(--amber); color:#fff}
+  #loginSubmit:hover{background:var(--amber-dk)}
+  #loginSubmit:disabled{opacity:.6; cursor:wait}
 </style>
 </head>
 <body>
@@ -114,6 +138,7 @@
   <div class="panel">
     <div class="bar"><span class="led"></span><span>Lost package assistant</span><span id="mode" class="mode">starting…</span>
       <label class="switch" title="Off: keyword rules only, no AI"><input type="checkbox" id="aiToggle" aria-label="Use the Gemini AI agent"><span class="track"></span><span class="sw-label">AI</span></label>
+      <button type="button" id="restartBtn" class="iconbtn" title="Restart the chat" aria-label="Restart the chat">↻</button>
     </div>
     <div id="notice" class="notice" role="status" hidden><span class="pulse"></span><span id="noticeText"></span><button type="button" id="noticeBtn" hidden></button></div>
     <div id="thread" role="log" aria-live="polite"></div>
@@ -139,7 +164,24 @@
   </div>
 </div>
 
+<dialog id="loginModal">
+  <div class="modal-head">Sign in to find your order</div>
+  <form class="modal-body" id="loginForm">
+    <p>Demo account — try <code>alex@example.com</code> / <code>demo1234</code>.</p>
+    <div class="modal-err" id="loginErr" hidden></div>
+    <div class="field"><label for="loginEmail">Email</label>
+      <input id="loginEmail" type="email" autocomplete="username" required></div>
+    <div class="field"><label for="loginPassword">Password</label>
+      <input id="loginPassword" type="password" autocomplete="current-password" required></div>
+    <div class="modal-actions">
+      <button type="button" id="loginCancel">Cancel</button>
+      <button type="submit" id="loginSubmit">Log in</button>
+    </div>
+  </form>
+</dialog>
+
 <script src="config.js"></script>
+<script src="users.js"></script>
 <script src="orders.js"></script>
 <script src="engine.js"></script>
 <script>
@@ -212,10 +254,19 @@ function render(reply) {
     b.onclick = () => submit(label);
     chips.appendChild(b);
   });
+  if (reply.offerLogin) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip chip-login";
+    b.textContent = "Sign in to see my orders";
+    b.onclick = openLoginModal;
+    chips.appendChild(b);
+  }
 }
 
 function busy(on) {
   entry.disabled = sendBtn.disabled = on;
+  restartBtn.disabled = on;
   chips.querySelectorAll("button").forEach(b => (b.disabled = on));
 }
 
@@ -242,6 +293,86 @@ async function submit(raw) {
 }
 
 form.onsubmit = e => { e.preventDefault(); const v = entry.value; entry.value = ""; submit(v); };
+
+/* ---------- Sign in ----------
+   Only offered when the customer says they don't know their order number.
+   Server mode checks the mock account with the server (the password never
+   left the browser as anything but this one request); offline mode checks
+   the same mock accounts bundled with the page (users.js) — fine for a demo,
+   never do this with real passwords: a real login is checked only server-side. */
+const loginModal = document.getElementById("loginModal");
+const loginForm = document.getElementById("loginForm");
+const loginEmail = document.getElementById("loginEmail");
+const loginPassword = document.getElementById("loginPassword");
+const loginErr = document.getElementById("loginErr");
+const loginSubmit = document.getElementById("loginSubmit");
+const restartBtn = document.getElementById("restartBtn");
+
+function openLoginModal() {
+  loginErr.hidden = true;
+  loginModal.showModal();
+  loginEmail.focus();
+}
+loginModal.addEventListener("click", e => { if (e.target === loginModal) loginModal.close(); });
+loginModal.addEventListener("close", () => { loginErr.hidden = true; });
+document.getElementById("loginCancel").onclick = () => loginModal.close();
+
+async function login(email, password) {
+  if (backend && backend.agent) {
+    const r = await fetch(API + "/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }), signal: AbortSignal.timeout(10000)
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || "Sign-in failed. Please try again.");
+    return data;
+  }
+  const rec = (window.TRACKBOT_USERS || {})[email.trim().toLowerCase()];
+  if (!rec || rec.password !== password) throw new Error("Email or password not recognized.");
+  return { name: rec.name, orders: rec.orders.map(id => ({ id, useCase: window.TrackBotEngine.ORDERS[id]?.useCase || "" })) };
+}
+
+function renderLoginSuccess(name, orders) {
+  add("bot", `Welcome back, ${name}! Here's what's on your account — pick one to look it up:`);
+  chips.replaceChildren();
+  orders.forEach(o => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.textContent = o.useCase ? `${o.id} — ${o.useCase}` : o.id;
+    b.onclick = () => submit(o.id);
+    chips.appendChild(b);
+  });
+}
+
+loginForm.onsubmit = async e => {
+  e.preventDefault();
+  loginSubmit.disabled = true;
+  loginErr.hidden = true;
+  try {
+    const { name, orders } = await login(loginEmail.value, loginPassword.value);
+    loginModal.close();
+    loginForm.reset();
+    renderLoginSuccess(name, orders);
+  } catch (err) {
+    loginErr.textContent = err.message || "Sign-in failed. Please try again.";
+    loginErr.hidden = false;
+  } finally {
+    loginSubmit.disabled = false;
+  }
+};
+
+/* ---------- Restart ---------- */
+restartBtn.onclick = async () => {
+  busy(true);
+  try {
+    useBackend(aiToggle.checked && agentStatus ? await serverBackend(agentStatus) : await localBackend());
+  } catch {
+    useBackend(await localBackend());
+  } finally {
+    busy(false);
+  }
+};
 document.getElementById("showDecisions").onchange = e =>
   document.body.classList.toggle("hide-decisions", !e.target.checked);
 
@@ -303,6 +434,7 @@ async function localBackend() {
     agent: false,
     greeting: E.greeting(),
     async submit(text) {
+      if (E.hitTurnLimit(s)) return { ...E.offerLimit(s), decision: { action: "turn_limit", by: "rules" } };
       const which = E.precheck(s, text);
       if (which) return { ...which, decision: { action: "which_order", by: "rules" } };
       const d = E.ruleIntent(s, text) || { action: "unclear" };
@@ -340,7 +472,7 @@ function orderRow(id, rec) {
   const left = el("span", "oleft");
   left.append(el("span", "oid", id), el("span", "ostatus", rec.status));
   const details = Object.entries(rec).filter(([k]) => !["useCase", "status"].includes(k))
-    .map(([k, v]) => k === "featured" ? "quick reply" : `${k}: ${v}`).join(" · ");
+    .map(([k, v]) => `${k}: ${v}`).join(" · ");
   const right = el("span", "oright");
   right.append(el("span", "ouse", rec.useCase || "(no description)"), el("span", "odet", details));
   row.append(left, right);

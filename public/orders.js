@@ -4,8 +4,7 @@ window.TRACKBOT_ORDERS = {
     "useCase": "Delivered, left at the front door with a photo",
     "status": "delivered",
     "on": "Sept 12",
-    "where": "left at front door, photo on file",
-    "featured": true
+    "where": "left at front door, photo on file"
   },
   "EG-58207": {
     "useCase": "Delivered, signed for by someone else at the address",
@@ -35,8 +34,7 @@ window.TRACKBOT_ORDERS = {
     "useCase": "In transit, on schedule",
     "status": "in_transit",
     "eta": "Sept 19",
-    "where": "regional hub, Reno NV",
-    "featured": true
+    "where": "regional hub, Reno NV"
   },
   "EG-77502": {
     "useCase": "In transit, a few days from arriving",
@@ -85,8 +83,7 @@ window.TRACKBOT_ORDERS = {
     "useCase": "Stalled, past due with no movement",
     "status": "stalled",
     "due": "Sept 14",
-    "where": "last scanned Sept 13 in Memphis TN",
-    "featured": true
+    "where": "last scanned Sept 13 in Memphis TN"
   },
   "EG-10388": {
     "useCase": "Stalled at a sort facility, a few days overdue",

@@ -38,7 +38,7 @@ asking, and switches to Gemini when it answers, unless you turned the switch off
 disabled when no server is configured.
 
 ```bash
-npm test                    # 98 tests; no key or network needed
+npm test                    # 109 tests; no key or network needed
 ```
 
 ---
@@ -92,6 +92,18 @@ working on the first one and asks whether to check the new one instead or stay p
 looks up the new order; "no" returns to the same step. The same applies when a row is clicked
 in the **view all orders** panel.
 
+**Restart, any time.** The ↻ button in the header wipes the session — misses, mood, order in
+progress, everything — and starts a brand new chat in whichever mode (agent or keyword) is
+currently active. The same `restart_chat` move is also what "Start over" uses at the message
+limit below.
+
+**A limit on how long one chat can run.** After 12 customer messages, the bot stops and asks
+whether to bring in a person or start the chat over, instead of a confused loop continuing
+forever (or quietly burning Gemini quota). It fires even if the customer is stuck not
+answering the "want a person?" prompt from a run of misses — that's exactly the stuck case
+this exists to catch. Restarting clears the server's memory of the old chat too, so nothing
+from before bleeds into what Gemini sees next.
+
 **Noticing when a customer is upset.** Along with the move, Gemini also flags whether the
 newest message sounds angry or exasperated. One upset message doesn't hand the customer off:
 the reply acknowledges how they feel and keeps helping. Two in a row means the flow isn't
@@ -114,6 +126,7 @@ matcher misses.
 | Order numbers from the model are validated and looked up | Hallucinated order numbers |
 | Facts in every reply come from the app; Gemini's rewrite is thrown away if it changes a number, date or order id, or drops the follow-up question | Invented promises, or a reply that leaves the customer hanging |
 | Customer text is fenced off as data in the prompt | "Ignore your rules and…" |
+| 12 customer messages in one chat → offer a person or a restart, before spending a Gemini call | A confused loop running forever, or burning API quota |
 | The upset flag only decides whether to *offer* a person, never which move runs | Anger being used to skip steps |
 | Gemini error or timeout (10s to pick the move, 8s to reword) → keyword matching or the plain draft takes over | A dead chat during an outage |
 | Key stays on the server, sent in a header | Key leaking to the browser or logs |
@@ -241,8 +254,8 @@ handoff by itself; the customer can always ask for a person directly.
 **5 · Awkward inputs.** Found by running a batch of messy messages through the live agent and
 fixing what broke:
 - Two order numbers in one message → asks which to start with (no Gemini call needed).
-- "I don't have my order number" or "I never ordered anything" → offers a person right away
-  instead of asking again for an email they may not have.
+- "I don't have my order number" or "I never ordered anything" → offers a person, and now also
+  a **Sign in** option (see below), instead of just asking again for an email they may not have.
 - "I found it!" is accepted at any step, and "thanks" or "no that's all" at the end gets a
   friendly goodbye instead of an error.
 - Keyword mode finds an order number inside a sentence, ignores years and random digits, and
@@ -265,11 +278,14 @@ public/
   engine.js      the conversation flow — shared by browser and server
   orders.json    20 mock orders, one per situation the bot handles
   orders.js      the same orders as a script, so a page opened from disk can use them (generated)
+  users.json     8 mock accounts (email + password), each linked to a few orders
+  users.js       the same accounts as a script, for signing in from disk (generated)
   config.js      where the agent server lives, if it's hosted separately
 build-orders.js  regenerates public/orders.js from orders.json (npm run build:orders)
+build-users.js   regenerates public/users.js from users.json (npm run build:users)
 server.js        holds the API key, keeps each conversation's state, runs each turn
 gemini.js        picks the move, then rewrites the engine's draft reply in natural words
-test.js          98 tests: every path, every error, every guardrail
+test.js          109 tests: every path, every error, every guardrail
 render.yaml      one-click deploy to Render
 .github/         optional: publishes public/ to GitHub Pages
 flowchart.svg    the conversation design
@@ -326,17 +342,39 @@ every reply after it is worded by Gemini from the app's facts.
 | `my order is eg 58120` | Agent mode pulls the number out of a sentence |
 | `nah not out there, asked next door` | Agent mode understands; keyword mode doesn't |
 | `EG-58120 and EG-77441` | Two order numbers → asks which to look at first |
-| `I don't have my order number` | Offers a person right away |
+| `I don't have my order number` | Offers a person, and a "Sign in" option |
+| Sign in as `alex@example.com` / `demo1234` | Lists that account's orders as chips, no typing needed |
 | `EG-10293`, then `EG-77441` | A different order mid-chat → asks whether to switch or stay |
 | `EG-10293`, then `this is so annoying`, then `SERIOUSLY?? this is ridiculous` | Two upset messages in a row → offers a person |
+| Any 12 messages in a row | Offers a person or a restart — try the ↻ button in the header too |
+
+---
+
+## Sign in — for a customer who doesn't know their order number
+
+If a customer says they don't have their order number (*"I don't have it"*, *"I never
+ordered anything"*), the bot offers a person **and** a "Sign in to see my orders" chip that
+opens a modal. A successful sign-in replaces the chips with the account's own orders, ready to
+tap and look up — no order number needed.
+
+`public/users.json` holds 8 mock accounts (email + password), each linked to 2–3 of the 20
+orders, covering all of them. Every demo password is `demo1234` — the modal shows a working
+example. Server mode checks `POST /api/login`; a page opened straight from disk checks the
+same accounts from a generated copy, `public/users.js` (same idea as `orders.js`).
+
+**These are demo credentials only.** They're plain text, and in offline mode they ship to the
+browser exactly like `orders.js` does — fine for mock data, never do this with real passwords.
+A real login checks a hashed password only on the server and never sends it to the client.
+
+![Sign in](screenshots/06-sign-in.png)
 
 ---
 
 ## Test orders
 
 `public/orders.json` holds 20 mock orders, one per situation, standing in for a carrier
-tracking API. Type any of these order numbers into the chat. Only three (`EG-58120`,
-`EG-77441`, `EG-10293`) are offered as quick replies, so the chips stay short.
+tracking API. Type any of these order numbers into the chat, or sign in (above) to get them
+without typing anything.
 
 | Order | Situation | What the bot does |
 |---|---|---|
@@ -369,10 +407,10 @@ note saying so) when the server can't be reached.
 ![View all orders](screenshots/05-view-all-orders.png)
 
 To add a case, add an entry to `orders.json`, then run `npm run build:orders`. The `status`
-picks which conversation route it follows (the routes live in `engine.js`); `featured: true`
-makes it a quick-reply chip. Browsers won't let a page opened from disk read a JSON file, so
-`public/orders.js` is a generated copy of it that loads as a script; a test fails if the two
-drift apart.
+picks which conversation route it follows (the routes live in `engine.js`). Browsers won't let
+a page opened from disk read a JSON file, so `public/orders.js` is a generated copy of it that
+loads as a script (same pattern as `users.json` → `users.js`); a test fails if either pair
+drifts apart.
 
 ---
 

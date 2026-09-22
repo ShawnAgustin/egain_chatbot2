@@ -187,6 +187,64 @@ function talk(...inputs) {
     assert.equal(no.s.state, "stalled"); assert.equal(no.s.order, "EG-10293");
     assert.equal(talk("EG-10293", "EG-77441").s.state, "confirm_switch");
   });
+  await check("restart_chat wipes the session back to a brand new one", () => {
+    const s = engine.createSession();
+    engine.apply(s, "lookup_order", { order_id: "EG-10293" });
+    engine.apply(s, "unclear"); engine.apply(s, "unclear");           // rack up some misses/state first
+    const r = engine.apply(s, "escalate_to_agent");                   // now s.state === "ended"
+    assert.equal(s.state, "ended");
+    s.state = "confirm_limit";                                        // pretend the limit prompt fired
+    const r2 = engine.apply(s, "restart_chat");
+    assert.deepEqual(s, engine.createSession());
+    assert.match(r2.messages[0].text, /What's the order number/);
+    assert.deepEqual(r2.chips, []);
+  });
+
+  await check("message limit: 12 customer turns offers a person or a restart, not endless back-and-forth", () => {
+    const s = engine.createSession();
+    let last;
+    for (let i = 0; i < 11; i++) { assert.equal(engine.hitTurnLimit(s), false, `turn ${i + 1}`); }
+    assert.equal(engine.hitTurnLimit(s), true, "turn 12");
+    last = engine.offerLimit(s);
+    assert.equal(s.state, "confirm_limit");
+    assert.match(last.messages[0].text, /12 messages now/);
+    assert.deepEqual(last.chips, ["Get me a person", "Start over"]);
+  });
+
+  await check("message limit does not retrigger once already offered, or once the chat has ended", () => {
+    for (const state of ["confirm_limit", "ended"]) {
+      const s = engine.createSession(); s.turns = 20; s.state = state;
+      assert.equal(engine.hitTurnLimit(s), false, state);
+    }
+  });
+
+  await check("message limit still fires on a customer stuck looping at the escalation offer", () => {
+    const s = engine.createSession(); s.turns = 20; s.state = "confirm_escalation";
+    assert.equal(engine.hitTurnLimit(s), true);
+  });
+
+  await check("message limit: restarting resets the turn count", () => {
+    const s = engine.createSession();
+    for (let i = 0; i < 12; i++) engine.hitTurnLimit(s);
+    engine.offerLimit(s);
+    engine.apply(s, "restart_chat");
+    assert.equal(s.turns, 0);
+    for (let i = 0; i < 11; i++) assert.equal(engine.hitTurnLimit(s), false);
+  });
+
+  await check("message limit: choosing a person still works from the limit prompt", () => {
+    const s = engine.createSession(); s.state = "confirm_limit"; s.order = "EG-10293";
+    const r = engine.apply(s, "escalate_to_agent");
+    assert.equal(s.state, "ended"); assert.match(r.messages[0].text, /support specialist/);
+  });
+
+  await check("keyword mode recognizes the limit prompt's two answers", () => {
+    const s1 = engine.createSession(); s1.state = "confirm_limit";
+    assert.equal(engine.ruleIntent(s1, "get me a person")?.action, "escalate_to_agent");
+    const s2 = engine.createSession(); s2.state = "confirm_limit";
+    assert.equal(engine.ruleIntent(s2, "start over please")?.action, "restart_chat");
+  });
+
   await check("engine refuses an illegal move even if asked directly", () => {
     const s = engine.createSession();
     const r = engine.apply(s, "issue_refund");                 // no order, wrong step
@@ -238,13 +296,14 @@ function talk(...inputs) {
     assert.equal(s.state, "ask_order"); assert.equal(s.misses, 0);
     assert.equal(engine.precheck(s, "just EG-58120"), null);
   });
-  await check("'I don't have my order number' offers a person right away", () => {
+  await check("'I don't have my order number' offers a person right away, and offers to sign in", () => {
     for (const said of ["I don't have my order number", "can't find my confirmation email", "I never ordered anything"]) {
       const s = engine.createSession();
       assert.equal(engine.ruleIntent(s, said)?.action, "no_order_number", said);
       const r = engine.apply(s, "no_order_number");
-      assert.equal(s.state, "confirm_escalation"); assert.match(r.messages[0].text, /connect you with one/);
+      assert.equal(s.state, "confirm_escalation"); assert.match(r.messages[0].text, /sign in below/);
       assert.deepEqual(r.chips, ["Yes, get me an agent", "No, let's keep going"]);
+      assert.equal(r.offerLogin, true);
       engine.apply(s, "keep_going"); assert.equal(s.state, "ask_order");
     }
   });
@@ -335,10 +394,9 @@ function talk(...inputs) {
     }
   });
 
-  await check("quick replies offer a few featured orders, not all of them", () => {
-    const chips = engine.greeting().chips;
-    assert.ok(chips.length <= 4, chips.join(", "));
-    assert.ok(chips.every(c => orders[c]?.featured));
+  await check("the greeting has no order-number chips, since sign-in is now how customers find one", () => {
+    assert.deepEqual(engine.greeting().chips, []);
+    assert.deepEqual(engine.STATES.ask_order.chips(), ["agent"]);
   });
 
   await check("an order with a status the engine can't read gets an error, not a crash", () => {
@@ -365,7 +423,7 @@ function talk(...inputs) {
     const s = browserEngine.createSession();
     const r = browserEngine.apply(s, "lookup_order", { order_id: "EG-78174" });    // an order that was NOT one of the old built-in three
     assert.match(r.messages[0].text, /customs/); assert.equal(s.state, "in_transit");
-    assert.equal(browserEngine.greeting().chips.length, 3);
+    assert.deepEqual([...browserEngine.greeting().chips], []);   // spread: avoid a cross-realm empty-array quirk in assert.deepEqual
   });
 
   /* ---------------- Server + fake Gemini ---------------- */
@@ -374,6 +432,7 @@ function talk(...inputs) {
   process.env.GEMINI_API_KEY = "test-key";
   process.env.ALLOWED_ORIGINS = "https://shawn.github.io";
   process.env.SESSION_LIMIT_PER_MIN = "30";
+  process.env.RATE_LIMIT_PER_MIN = "1000";   // the suite alone sends well over the default 30/min
   let fake = () => ({ name: "unclear" });                      // swapped per test
   let voice = () => "HTTP_500";                                // the rewrite call; off unless a test turns it on
   let lastGeminiRequest = null;
@@ -470,6 +529,53 @@ function talk(...inputs) {
     fake = () => ({ name: "lookup_order", args: { order_id: "EG-77441" } });
     const r2 = await say(id, "EG-77441");
     assert.match(r2.messages[0].text, /still moving/);
+  });
+
+  await check("message limit: the 12th customer turn offers a person or a restart, without calling Gemini", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "unclear" });
+    let r;
+    for (let i = 0; i < 11; i++) r = await say(id, `message ${i + 1}`);
+    assert.equal(r.decision.action, "unclear");
+    const before = geminiCalls;
+    r = await say(id, "message 12");
+    assert.equal(geminiCalls, before, "the limit turn should not spend a Gemini call");
+    assert.equal(r.decision.action, "turn_limit"); assert.equal(r.decision.by, "rules");
+    assert.match(r.messages[0].text, /12 messages now/);
+    assert.deepEqual(r.chips, ["Get me a person", "Start over"]);
+  });
+
+  await check("message limit: restarting gets a fresh greeting and Gemini forgets the old chat", async () => {
+    const id = await newChat();
+    fake = () => ({ name: "unclear" });
+    for (let i = 0; i < 12; i++) await say(id, `message ${i + 1}`);
+    fake = () => ({ name: "restart_chat" });
+    const r = await say(id, "start over");
+    assert.match(r.messages[0].text, /What's the order number/);
+    fake = () => ({ name: "unclear" });
+    await say(id, "hi again");
+    assert.ok(!lastDecisionRequest.body.contents[0].parts[0].text.includes("message 1\n"),
+      "the pre-restart messages should not still be in Gemini's context");
+  });
+
+  await check("POST /api/login: a real demo account signs in and lists its orders", async () => {
+    const r = await realFetch(base + "/api/login", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "ALEX@example.com", password: "demo1234" }) });
+    assert.equal(r.status, 200);
+    const data = await r.json();
+    assert.equal(data.name, "Alex Rivera");
+    assert.deepEqual(data.orders.map(o => o.id), ["EG-58120", "EG-58207"]);
+    assert.ok(data.orders[0].useCase.length > 0);
+    assert.ok(!("password" in data));
+  });
+
+  await check("POST /api/login: wrong password or unknown email is refused, without saying which", async () => {
+    const wrongPass = await realFetch(base + "/api/login", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "alex@example.com", password: "nope" }) });
+    const unknown = await realFetch(base + "/api/login", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "nobody@example.com", password: "demo1234" }) });
+    assert.equal(wrongPass.status, 401); assert.equal(unknown.status, 401);
+    assert.equal((await wrongPass.json()).error, (await unknown.json()).error);
   });
 
   await check("API key travels in a header, never the URL", async () => {

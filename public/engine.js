@@ -21,12 +21,6 @@
      the same data from orders.js (a generated copy, so it also works from disk). */
   const ORDERS = loadedOrders;
 
-  // The order numbers offered as quick replies. Only a few, not all of them.
-  const featuredOrders = () => {
-    const ids = Object.keys(ORDERS), pick = ids.filter(id => ORDERS[id].featured);
-    return pick.length ? pick : ids.slice(0, 3);
-  };
-
   /* ---------- Never leave the customer hanging ----------
      Every reply ends by asking what they want to do next and naming the
      options, or (once a chat is wrapped up) by saying how to start again. */
@@ -107,6 +101,7 @@
     keep_going:        { description: "The customer wants to keep going with the assistant rather than talk to a person." },
     switch_order:      { description: "The customer confirms they want to check the new order instead of the one already in progress." },
     stay_on_order:     { description: "The customer wants to stay with the order already in progress instead of switching to the new one." },
+    restart_chat:      { description: "The customer wants to start the conversation over from the beginning." },
     escalate_to_agent: { description: "The customer explicitly asks for a human, agent or person, or says they want to stop using the assistant. Frustration alone does not count." },
     unclear:           { description: "The customer's message does not clearly match any other action. Use this instead of guessing." }
   };
@@ -121,7 +116,7 @@
       ask: () => "What's the order number?",
       reprompt: () => "That doesn't look like an order number. They're two letters, a dash, then " +
                       "4–6 digits — like EG-58120. Mind checking your confirmation email?",
-      chips: () => [...featuredOrders(), "agent"]
+      chips: () => ["agent"]
     },
     looked_around: {
       actions: ["already_checked", "will_look"],
@@ -162,17 +157,22 @@
       actions: ["new_lookup", "say_goodbye"],
       reprompt: () => "We're all wrapped up here — want to look up another package?",
       chips: () => ["Start a new lookup"]
+    },
+    confirm_limit: {
+      actions: ["restart_chat"],
+      reprompt: () => "Would you like me to connect you with a person, or start the chat over?",
+      chips: () => ["Get me a person", "Start over"]
     }
   };
 
   /* ---------- Session ---------- */
   function createSession() {
-    return { state: "ask_order", order: null, misses: 0, upsets: 0, resumeState: null, pendingOrder: null, switchFrom: null };
+    return { state: "ask_order", order: null, misses: 0, upsets: 0, turns: 0, resumeState: null, pendingOrder: null, switchFrom: null };
   }
 
   function greeting() {
     return reply([bot("Hi, I'm TrackBot. Sorry your package hasn't shown up — let's find it. " +
-                      "What's the order number?")], featuredOrders());
+                      "What's the order number?")], []);
   }
 
   // Steps where a package can turn up. Only these offer found_it.
@@ -253,6 +253,27 @@
     return r;
   }
 
+  /* ---------- Message limit ----------
+     A very long back-and-forth usually means the flow isn't working for this
+     customer. After TURN_LIMIT customer messages in one chat, stop and ask
+     whether to bring in a person or start over, instead of going in circles
+     forever. Checked once per turn, before any decision maker runs.        */
+  const TURN_LIMIT = 12;
+
+  // Excludes confirm_limit (don't re-show the same offer every message while sitting there) and
+  // ended (already resolved). It does NOT exclude confirm_escalation: a customer stuck answering
+  // nonsense to "want a person?" is exactly the stuck-loop case this limit exists to catch.
+  function hitTurnLimit(s) {
+    s.turns = (s.turns || 0) + 1;
+    return s.turns >= TURN_LIMIT && !["confirm_limit", "ended"].includes(s.state);
+  }
+
+  function offerLimit(s) {
+    s.state = "confirm_limit";
+    return reply([bot(`We've been at this a while — ${TURN_LIMIT} messages now. I can connect you with ` +
+      `a person, or we can start the chat over. Which would you prefer?`)], STATES.confirm_limit.chips());
+  }
+
   /* ---------- Execute a decided action ----------
      Whoever decided (Gemini or rules), the engine re-checks that the
      action is legal from the current state before doing anything.   */
@@ -261,6 +282,12 @@
     if (!allowedActions(s).includes(action)) return miss(s);
 
     switch (action) {
+      case "restart_chat": {
+        const g = greeting();
+        Object.assign(s, createSession());
+        return g;
+      }
+
       case "escalate_to_agent":
         return go(s, "ended", "Of course. I'll connect you with a support specialist and pass along what we have so far" +
           (s.order ? `: order ${s.order}, reported missing.` : "."));
@@ -314,10 +341,13 @@
           "there, a claim is the fastest route. What would you like as the outcome?");
       case "will_look":
         return go(s, "recheck", "Go ahead and take a look — I'll be here. Come back and tell me either way.");
-      case "no_order_number":
-        return offerPerson(s, [], "No problem. I can't look anything up without an order number, but a person can " +
-          "search by your name or email. Would you like me to connect you with one, or keep looking for the number " +
-          "here? It's usually in your confirmation email.");
+      case "no_order_number": {
+        const r = offerPerson(s, [], "No problem — you can sign in below to see the orders on your account, or " +
+          "I can connect you with a person who can search by your name or email. Would you like a person, or " +
+          "would you rather keep looking for the number here?");
+        r.offerLogin = true;
+        return r;
+      }
 
       case "say_goodbye":
         return go(s, "ended", "You're welcome! I'm here whenever you need to check another order.");
@@ -378,6 +408,11 @@
       if (/^no|keep going|continue/i.test(t)) return { action: "keep_going" };
       return null;
     }
+    if (s.state === "confirm_limit") {
+      if (/agent|human|person/i.test(t)) return { action: "escalate_to_agent" };
+      if (/start over|restart|over again|begin again/i.test(t)) return { action: "restart_chat" };
+      return null;
+    }
     if (AGENT_WORDS.test(t)) return { action: "escalate_to_agent" };
     if (CAN_FIND.includes(s.state) && FOUND.test(t) && !NEGATION.test(t)) return { action: "found_it" };
 
@@ -414,5 +449,5 @@
     return null;
   }
 
-  return { ORDERS, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, precheck, ruleIntent, normalizeOrderId, findOrderIds };
+  return { ORDERS, ACTIONS, STATES, createSession, greeting, allowedActions, apply, noteMood, hitTurnLimit, offerLimit, precheck, ruleIntent, normalizeOrderId, findOrderIds };
 });
